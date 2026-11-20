@@ -1,0 +1,16 @@
+{
+  "buildCommand": "pip install -r requirements.txt",
+  "startCommand": "uvicorn app.main:app --host 0.0.0.0 --port $PORT",
+  "envVars": [
+    {"key": "GEMINI_API_KEY",        "generateValue": false},
+    {"key": "GEMINI_MODEL",          "value": "gemini-1.5-flash"},
+    {"key": "DATABASE_URL",          "generateValue": false},
+    {"key": "GMAIL_CLIENT_ID",       "generateValue": false},
+    {"key": "GMAIL_CLIENT_SECRET",   "generateValue": false},
+    {"key": "GMAIL_REDIRECT_URI",    "generateValue": false},
+    {"key": "APP_SECRET_KEY",        "generateValue": true},
+    {"key": "TOKEN_ENCRYPTION_KEY",  "generateValue": false},
+    {"key": "FRONTEND_URL",          "generateValue": false},
+    {"key": "BACKEND_URL",           "generateValue": false}
+  ]
+}

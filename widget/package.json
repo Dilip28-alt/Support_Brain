@@ -1,0 +1,12 @@
+{
+  "name": "support-brain-widget",
+  "version": "1.0.0",
+  "description": "Embeddable customer support chatbot widget for Support Brain",
+  "main": "src/widget.js",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
