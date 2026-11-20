@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     # AI Provider & Models (Ollama or Gemini)
     LLM_PROVIDER: str = Field(
-        default="ollama",
+        default="gemini",
         description="Text generation provider ('gemini' or 'ollama')"
     )
     OLLAMA_BASE_URL: str = Field(
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50       # overlap between chunks
 
     # AI confidence
-    SIMILARITY_THRESHOLD: float = 0.65   # cosine similarity cutoff for gemini-embedding-001
+    SIMILARITY_THRESHOLD: float = 0.58   # cosine similarity cutoff for gemini-embedding-001
     TOP_K_CHUNKS: int = 5                # number of knowledge chunks to retrieve
 
     # Rate limiting (public chat)

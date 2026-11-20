@@ -135,10 +135,39 @@ def call_ollama(prompt: str) -> str:
 
 
 def call_gemini(prompt: str) -> str:
-    """Send prompt to Gemini API."""
-    model = _get_gen_model()
-    response = model.generate_content(prompt)
-    return response.text.strip()
+    """Send prompt to Gemini API with model fallback and REST backup."""
+    candidates = []
+    if settings.GEMINI_MODEL:
+        candidates.append(settings.GEMINI_MODEL)
+    candidates.extend(GENERATION_MODELS)
+    
+    seen = set()
+    unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+
+    for cand in unique_candidates:
+        model_name = cand if cand.startswith("models/") else f"models/{cand}"
+        try:
+            m = genai.GenerativeModel(model_name)
+            response = m.generate_content(prompt)
+            if response and response.text:
+                return response.text.strip()
+        except Exception as e:
+            logger.warning(f"Gemini model {model_name} failed ({e}), trying next candidate...")
+            continue
+
+    # Fallback to direct HTTP REST via httpx if google-generativeai SDK hits network/grpc issues
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception as re:
+        logger.warning(f"Direct Gemini REST fallback failed: {re}")
+
+    return ""
 
 
 def call_llm(prompt: str) -> str:
@@ -215,14 +244,17 @@ def generate_answer(
 
     answer = call_llm(prompt)
     if not answer or not answer.strip():
-        # Fallback if external LLM generation is temporarily offline/rate-limited:
-        # Check if the top retrieved chunk contains a direct Answer
+        # Fallback if external LLM generation is temporarily offline or rate-limited:
         top_chunk = knowledge_chunks[0]
         if "Answer:" in top_chunk:
             ans_part = top_chunk.split("Answer:", 1)[1].strip()
             if ans_part:
                 return ans_part
-        return FALLBACK
+        # Grounded response directly from verified retrieved knowledge chunk
+        clean_ans = top_chunk.strip()
+        if len(clean_ans) > 400:
+            clean_ans = clean_ans[:400] + "..."
+        return f"Based on our documentation: {clean_ans}"
     return answer
 
 
