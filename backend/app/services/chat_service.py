@@ -216,38 +216,55 @@ async def handle_ask_again(
     db: AsyncSession,
     business_id: UUID,
     business_name: str,
-    message_id: UUID,
-    conversation_id: UUID,
+    message_id: Optional[UUID] = None,
+    conversation_id: Optional[UUID] = None,
+    question: Optional[str] = None,
 ) -> AskAgainResponse:
     """Re-run a question through the current learning system and compare answers."""
+    assistant_msg = None
+    previous_answer = "N/A"
+    original_question = question
 
-    # Find the user message that preceded this assistant message
-    assistant_result = await db.execute(
-        select(Message).where(
-            Message.id == message_id,
-            Message.business_id == business_id,
+    if message_id:
+        assistant_result = await db.execute(
+            select(Message).where(
+                Message.id == message_id,
+                Message.business_id == business_id,
+            )
         )
-    )
-    assistant_msg = assistant_result.scalar_one_or_none()
-    if not assistant_msg:
-        raise ValueError("Message not found")
+        assistant_msg = assistant_result.scalar_one_or_none()
+        if assistant_msg:
+            previous_answer = assistant_msg.content
 
-    previous_answer = assistant_msg.content
+    if not original_question and conversation_id and assistant_msg:
+        # Find the user message directly preceding this assistant message
+        user_msg_result = await db.execute(
+            select(Message).where(
+                Message.conversation_id == conversation_id,
+                Message.role == MessageRole.user,
+                Message.business_id == business_id,
+                Message.created_at <= assistant_msg.created_at,
+            ).order_by(Message.created_at.desc())
+        )
+        user_msgs = user_msg_result.scalars().all()
+        if user_msgs:
+            original_question = user_msgs[0].content
 
-    # Find the user message just before in the conversation
-    user_msg_result = await db.execute(
-        select(Message).where(
-            Message.conversation_id == conversation_id,
-            Message.role == MessageRole.user,
-            Message.business_id == business_id,
-        ).order_by(Message.created_at.desc())
-    )
-    user_msgs = user_msg_result.scalars().all()
+    if not original_question and conversation_id:
+        # Fallback to most recent user message in conversation
+        user_msg_result = await db.execute(
+            select(Message).where(
+                Message.conversation_id == conversation_id,
+                Message.role == MessageRole.user,
+                Message.business_id == business_id,
+            ).order_by(Message.created_at.desc())
+        )
+        user_msgs = user_msg_result.scalars().all()
+        if user_msgs:
+            original_question = user_msgs[0].content
 
-    if not user_msgs:
-        raise ValueError("Original question not found")
-
-    original_question = user_msgs[0].content
+    if not original_question:
+        raise ValueError("Original question not found. Please provide question or valid message_id.")
 
     # Re-run through the current pipeline
     lessons = await search_lessons(db, business_id, original_question)
@@ -298,6 +315,28 @@ async def save_feedback(
     """Save feedback and optionally create a lesson for bad answers."""
     fb_enum = FeedbackType.good if feedback_type == "good" else FeedbackType.bad
     lesson_id = None
+
+    # If question or ai_answer was omitted by the frontend, retrieve them from conversation history
+    if (not question or not ai_answer) and conversation_id and message_id:
+        msg_res = await db.execute(
+            select(Message).where(Message.id == message_id, Message.business_id == business_id)
+        )
+        ast_msg = msg_res.scalar_one_or_none()
+        if ast_msg:
+            if not ai_answer:
+                ai_answer = ast_msg.content
+            if not question:
+                user_msg_result = await db.execute(
+                    select(Message).where(
+                        Message.conversation_id == conversation_id,
+                        Message.role == MessageRole.user,
+                        Message.business_id == business_id,
+                        Message.created_at <= ast_msg.created_at,
+                    ).order_by(Message.created_at.desc())
+                )
+                u_msg = user_msg_result.scalars().first()
+                if u_msg:
+                    question = u_msg.content
 
     # Save feedback record
     feedback = AnswerFeedback(

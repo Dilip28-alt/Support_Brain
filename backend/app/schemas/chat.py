@@ -76,8 +76,9 @@ class FeedbackCreate(BaseModel):
 
 
 class AskAgainRequest(BaseModel):
-    message_id: UUID
-    conversation_id: UUID
+    message_id: Optional[UUID] = None
+    conversation_id: Optional[UUID] = None
+    question: Optional[str] = None
 
 
 class AskAgainResponse(BaseModel):

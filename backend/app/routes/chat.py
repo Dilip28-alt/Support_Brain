@@ -206,6 +206,7 @@ async def ask_again(
             business_name=business.name,
             message_id=data.message_id,
             conversation_id=data.conversation_id,
+            question=data.question,
         )
     except ValueError as e:
         raise HTTPException(404, str(e))
