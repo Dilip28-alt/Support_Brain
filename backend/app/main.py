@@ -2,10 +2,12 @@
 Support Brain — FastAPI Application Entry Point
 """
 import logging
+import os
 from contextlib import asynccontextmanager
+from typing import Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -69,6 +71,42 @@ app.add_middleware(
 @app.get("/api/health", tags=["health"])
 async def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/widget.js", tags=["widget"])
+async def get_widget_script():
+    """
+    Serve the embeddable customer chat widget JavaScript file.
+    Usable on external websites with:
+      <script src="https://YOUR_BACKEND_URL/widget.js" data-business-token="PUBLIC_WIDGET_TOKEN"></script>
+    """
+    script_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "widget", "src", "widget.js")
+    )
+    if not os.path.exists(script_path):
+        return JSONResponse(status_code=404, content={"detail": "widget.js not found"})
+    return FileResponse(
+        script_path,
+        media_type="application/javascript",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+@app.get("/api/widget/iframe", tags=["widget"])
+async def widget_iframe(token: Optional[str] = None, slug: Optional[str] = None):
+    """
+    Redirect helper for external iframe embedding.
+    Directs to the public chat interface for the requested business token or slug.
+    """
+    frontend_base = (settings.FRONTEND_URL or "http://localhost:5173").rstrip("/")
+    if token:
+        return RedirectResponse(f"{frontend_base}/chat?token={token}")
+    elif slug:
+        return RedirectResponse(f"{frontend_base}/chat/{slug}")
+    return RedirectResponse(f"{frontend_base}/chat")
 
 
 # Apply rate limit to public chat

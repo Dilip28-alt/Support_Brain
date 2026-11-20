@@ -16,7 +16,15 @@
   }
 
   const businessToken = scriptTag.getAttribute('data-business-token');
-  const backendUrl = scriptTag.getAttribute('data-backend-url') || 'http://localhost:8000';
+  let backendUrl = scriptTag.getAttribute('data-backend-url');
+  if (!backendUrl && scriptTag.src) {
+    try {
+      backendUrl = new URL(scriptTag.src).origin;
+    } catch (e) {
+      backendUrl = 'http://localhost:8000';
+    }
+  }
+  backendUrl = backendUrl || 'http://localhost:8000';
 
   if (!businessToken) {
     console.error('Support Brain Widget: data-business-token is required.');

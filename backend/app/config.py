@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50       # overlap between chunks
 
     # AI confidence
-    SIMILARITY_THRESHOLD: float = 0.45   # cosine similarity cutoff
+    SIMILARITY_THRESHOLD: float = 0.65   # cosine similarity cutoff for gemini-embedding-001
     TOP_K_CHUNKS: int = 5                # number of knowledge chunks to retrieve
 
     # Rate limiting (public chat)

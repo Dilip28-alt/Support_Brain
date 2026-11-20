@@ -73,13 +73,15 @@ async def search_lessons(
     business_id: UUID,
     query: str,
     top_k: int = 3,
-    threshold: float = 0.45,   # lessons confidence cutoff
+    threshold: float = 0.70,   # lessons confidence cutoff (calibrated for gemini-embedding-001)
 ) -> List[dict]:
     """
     Semantic search over active lessons for a specific business.
     Lessons are always checked before knowledge chunks.
+    Uses pgvector cosine similarity with exact-phrase boosting.
     """
-    query_embedding = get_embedding(query, task_type="RETRIEVAL_QUERY")
+    query_clean = query.strip()
+    query_embedding = get_embedding(query_clean, task_type="RETRIEVAL_QUERY")
     embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
     sql = text("""
@@ -89,19 +91,26 @@ async def search_lessons(
             l.corrected_answer,
             l.original_answer,
             l.owner_comment,
-            1 - (l.embedding <=> :embedding ::vector) AS similarity
+            CASE
+                WHEN LOWER(TRIM(l.question)) = LOWER(TRIM(:query_exact)) THEN 1.0
+                WHEN l.embedding IS NOT NULL THEN (1 - (l.embedding <=> :embedding ::vector))
+                ELSE 0.0
+            END AS similarity
         FROM lessons l
         WHERE l.business_id = :business_id
           AND l.is_active = true
-          AND l.embedding IS NOT NULL
-          AND 1 - (l.embedding <=> :embedding ::vector) >= :threshold
-        ORDER BY l.embedding <=> :embedding ::vector
+          AND (
+            LOWER(TRIM(l.question)) = LOWER(TRIM(:query_exact))
+            OR (l.embedding IS NOT NULL AND 1 - (l.embedding <=> :embedding ::vector) >= :threshold)
+          )
+        ORDER BY similarity DESC
         LIMIT :top_k
     """)
 
     result = await db.execute(sql, {
         "embedding": embedding_str,
         "business_id": str(business_id),
+        "query_exact": query_clean,
         "threshold": threshold,
         "top_k": top_k,
     })

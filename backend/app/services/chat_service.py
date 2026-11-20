@@ -191,7 +191,7 @@ async def handle_chat(
     await db.commit()
     await db.refresh(assistant_msg)
 
-    source_chunk_list = [
+    source_chunk_list = [] if is_pending else [
         SourceChunk(
             chunk_id=r["chunk_id"],
             source_title=r.get("source_title"),

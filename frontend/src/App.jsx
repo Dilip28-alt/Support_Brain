@@ -28,6 +28,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/chat/:slug" element={<ChatWidgetPage />} />
+        <Route path="/chat" element={<ChatWidgetPage />} />
 
         {/* Protected dashboard */}
         <Route path="/dashboard" element={
