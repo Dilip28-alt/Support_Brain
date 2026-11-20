@@ -49,6 +49,11 @@ class KnowledgeChunkUpdate(BaseModel):
     content: str = Field(..., min_length=10)
 
 
+class KnowledgeSourceUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=500)
+    content: Optional[str] = Field(None, min_length=10)
+
+
 class SemanticSearchResult(BaseModel):
     chunk_id: UUID
     source_id: UUID

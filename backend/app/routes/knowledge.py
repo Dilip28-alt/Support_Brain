@@ -11,11 +11,11 @@ from app.database import get_db
 from app.models.models import User, KnowledgeSource, KnowledgeChunk
 from app.schemas.knowledge import (
     KnowledgeTextCreate, KnowledgeUrlCreate, KnowledgeSourceResponse,
-    KnowledgeChunkResponse, KnowledgeChunkUpdate
+    KnowledgeChunkResponse, KnowledgeChunkUpdate, KnowledgeSourceUpdate
 )
 from app.services.knowledge_service import (
     ingest_text, ingest_pdf, ingest_url,
-    delete_source, update_chunk, reprocess_source
+    delete_source, update_chunk, reprocess_source, update_source
 )
 from app.utils.auth import get_current_active_user
 from app.config import get_settings
@@ -167,4 +167,24 @@ async def reprocess(
     source = await reprocess_source(db, current_user.business_id, source_id)
     if not source:
         raise HTTPException(404, "Knowledge source not found or has no content to reprocess")
+    return source
+
+
+@router.patch("/sources/{source_id}", response_model=KnowledgeSourceResponse)
+async def modify_source(
+    source_id: UUID,
+    data: KnowledgeSourceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update source title or content (re-chunks and re-embeds to keep search results fresh)."""
+    source = await update_source(
+        db=db,
+        business_id=current_user.business_id,
+        source_id=source_id,
+        title=data.title,
+        content=data.content,
+    )
+    if not source:
+        raise HTTPException(404, "Knowledge source not found")
     return source

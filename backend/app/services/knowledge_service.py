@@ -10,6 +10,7 @@ from sqlalchemy import select, delete, update
 from app.models.models import KnowledgeSource, KnowledgeChunk, KnowledgeSourceType
 from app.ai.gemini_client import get_embedding
 from app.utils.text_processing import chunk_text, clean_text
+from app.utils.security import validate_public_url
 from app.config import get_settings
 import logging
 import io
@@ -84,7 +85,9 @@ async def ingest_url(
     url: str,
     title: Optional[str] = None,
 ) -> KnowledgeSource:
-    """Scrape a URL and ingest its readable content."""
+    """Scrape a URL and ingest its readable content safely with SSRF protection."""
+    url = validate_public_url(url)
+
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         response = await client.get(url, headers={"User-Agent": "SupportBrainBot/1.0"})
         response.raise_for_status()
@@ -210,6 +213,51 @@ async def reprocess_source(
     await db.flush()
 
     await _process_source(db, source, source.original_content)
+    await db.commit()
+    await db.refresh(source)
+    return source
+
+
+async def update_source(
+    db: AsyncSession,
+    business_id: UUID,
+    source_id: UUID,
+    title: Optional[str] = None,
+    content: Optional[str] = None,
+) -> Optional[KnowledgeSource]:
+    """
+    Update a knowledge source's title and/or content.
+    If content is updated, removes all outdated chunks and re-embeds new chunks.
+    Avoids outdated chunks remaining in vector search results.
+    """
+    result = await db.execute(
+        select(KnowledgeSource).where(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.business_id == business_id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        return None
+
+    if title is not None:
+        source.title = title
+
+    if content is not None:
+        cleaned = clean_text(content)
+        source.original_content = cleaned
+
+        # Delete all outdated chunks for this source
+        await db.execute(
+            delete(KnowledgeChunk).where(KnowledgeChunk.source_id == source_id)
+        )
+        source.is_processed = False
+        source.chunk_count = 0
+        await db.flush()
+
+        # Re-chunk and re-embed with fresh vectors
+        await _process_source(db, source, cleaned)
+
     await db.commit()
     await db.refresh(source)
     return source
