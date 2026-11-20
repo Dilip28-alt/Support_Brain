@@ -58,17 +58,14 @@ export function AuthProvider({ children }) {
     setToken(data.access_token)
     setUser(data)
 
-    // Fetch full profile with business details
-    try {
-      const meRes = await api.get('/auth/me', {
-        headers: { Authorization: `Bearer ${data.access_token}` }
-      })
+    // Non-blocking background profile enrichment
+    api.get('/auth/me', {
+      headers: { Authorization: `Bearer ${data.access_token}` }
+    }).then(meRes => {
       const fullUser = { ...data, ...meRes.data }
       setUser(fullUser)
       localStorage.setItem('sb_user', JSON.stringify(fullUser))
-    } catch {
-      // Keep basic data
-    }
+    }).catch(() => {})
 
     return data
   }

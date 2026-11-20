@@ -57,10 +57,18 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS
+# CORS - allow configured FRONTEND_URL, all *.vercel.app domains, and localhost
+cors_origins = [
+    settings.FRONTEND_URL.rstrip("/"),
+    f"{settings.FRONTEND_URL.rstrip('/')}/",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "http://localhost:5173", "http://localhost:3000"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,6 +76,7 @@ app.add_middleware(
 
 
 # Health check
+@app.get("/health", tags=["health"])
 @app.get("/api/health", tags=["health"])
 async def health():
     return {"status": "ok", "version": "1.0.0"}
