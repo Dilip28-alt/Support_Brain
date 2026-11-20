@@ -35,29 +35,43 @@ FALLBACK_ANSWER = "Thank you! The team will reply to you soon."
 
 async def handle_chat(
     db: AsyncSession,
-    business_slug: str,
-    question: str,
-    customer_name: Optional[str],
-    customer_email: Optional[str],
-    conversation_id: Optional[UUID],
+    business_slug: Optional[str] = None,
+    business_token: Optional[str] = None,
+    question: str = "",
+    customer_name: Optional[str] = None,
+    customer_email: Optional[str] = None,
+    conversation_id: Optional[UUID] = None,
 ) -> ChatResponse:
-    """Main RAG pipeline for public chat."""
+    """Main RAG pipeline for public customer chat."""
 
-    # 1. Resolve business
-    clean_slug = business_slug.strip()
-    result = await db.execute(
-        select(Business).where(
-            Business.slug.ilike(clean_slug),
-            Business.is_active == True
+    # 1. Resolve and validate business using public token or slug
+    business = None
+    if business_token and business_token.strip():
+        token_clean = business_token.strip()
+        result = await db.execute(
+            select(Business).where(
+                Business.widget_token == token_clean,
+                Business.is_active == True
+            )
         )
-    )
-    business = result.scalar_one_or_none()
+        business = result.scalar_one_or_none()
+
+    if not business and business_slug and business_slug.strip():
+        clean_slug = business_slug.strip()
+        result = await db.execute(
+            select(Business).where(
+                Business.slug.ilike(clean_slug),
+                Business.is_active == True
+            )
+        )
+        business = result.scalar_one_or_none()
+        if not business:
+            alt = await db.execute(select(Business).where(Business.slug.ilike(clean_slug)))
+            business = alt.scalar_one_or_none()
+
     if not business:
-        # Fallback check without is_active in case boolean representation differs
-        alt = await db.execute(select(Business).where(Business.slug.ilike(clean_slug)))
-        business = alt.scalar_one_or_none()
-    if not business:
-        raise ValueError(f"Business '{business_slug}' not found")
+        identifier = business_token or business_slug or "unspecified"
+        raise ValueError(f"Business identifier '{identifier}' is invalid or unauthorized")
 
     # 2. Get or create conversation
     if conversation_id:

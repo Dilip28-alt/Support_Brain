@@ -11,14 +11,70 @@ from app.database import get_db
 from app.models.models import User, Conversation, Message, Business
 from app.schemas.chat import (
     ChatRequest, ChatResponse, ConversationResponse, MessageResponse,
-    FeedbackCreate, AskAgainRequest, AskAgainResponse
+    FeedbackCreate, AskAgainRequest, AskAgainResponse, PublicBusinessInfo
 )
 from app.services.chat_service import handle_chat, handle_ask_again, save_feedback
 from app.utils.auth import get_current_active_user
 
 router = APIRouter(tags=["chat"])
 
-# ─────── Public chat (rate-limited) ───────
+# ─────── Public chat (no auth required) ───────
+
+@router.get("/api/chat/public/info", response_model=PublicBusinessInfo)
+async def get_public_business_info(
+    token: Optional[str] = None,
+    slug: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public business metadata for widget and chat window.
+    Never exposes owner dashboard, private documents, or credentials.
+    """
+    if not token and not slug:
+        raise HTTPException(400, "Either 'token' or 'slug' parameter is required")
+
+    business = None
+    if token:
+        result = await db.execute(select(Business).where(Business.widget_token == token.strip(), Business.is_active == True))
+        business = result.scalar_one_or_none()
+    elif slug:
+        result = await db.execute(select(Business).where(Business.slug.ilike(slug.strip()), Business.is_active == True))
+        business = result.scalar_one_or_none()
+
+    if not business:
+        raise HTTPException(404, "Business not found or inactive")
+
+    return PublicBusinessInfo(
+        name=business.name,
+        slug=business.slug,
+        widget_token=business.widget_token or "",
+        description=business.description,
+    )
+
+
+@router.get("/api/widget/{slug}")
+async def get_widget_info_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
+    """Public endpoint for customer widget by slug."""
+    info = await get_public_business_info(slug=slug, db=db)
+    return {
+        "business_name": info.name,
+        "business_slug": info.slug,
+        "widget_token": info.widget_token,
+        "description": info.description,
+    }
+
+
+@router.get("/api/widget/token/{token}")
+async def get_widget_info_by_token(token: str, db: AsyncSession = Depends(get_db)):
+    """Public endpoint for customer widget by public widget token."""
+    info = await get_public_business_info(token=token, db=db)
+    return {
+        "business_name": info.name,
+        "business_slug": info.slug,
+        "widget_token": info.widget_token,
+        "description": info.description,
+    }
+
 
 @router.post("/api/chat", response_model=ChatResponse)
 async def public_chat(
@@ -26,11 +82,16 @@ async def public_chat(
     chat_req: ChatRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Public endpoint — no auth required. Rate-limited per IP."""
+    """
+    Public customer chat endpoint — no auth required.
+    Validates business via public widget token or slug.
+    Never trusts raw business_id.
+    """
     try:
         return await handle_chat(
             db=db,
             business_slug=chat_req.business_slug,
+            business_token=chat_req.business_token,
             question=chat_req.question,
             customer_name=chat_req.customer_name,
             customer_email=chat_req.customer_email,

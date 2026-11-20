@@ -25,7 +25,8 @@ class BusinessResponse(BaseModel):
     id: UUID
     name: str
     slug: str
-    description: Optional[str]
+    widget_token: Optional[str] = None
+    description: Optional[str] = None
     is_active: bool
     created_at: datetime
 
@@ -61,15 +62,19 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     business_id: UUID
     business_slug: str
+    widget_token: Optional[str] = None
     user_id: UUID
-    full_name: Optional[str]
+    full_name: Optional[str] = None
 
 
 class UserResponse(BaseModel):
     id: UUID
     business_id: UUID
+    business_name: Optional[str] = None
+    business_slug: Optional[str] = None
+    widget_token: Optional[str] = None
     email: str
-    full_name: Optional[str]
+    full_name: Optional[str] = None
     is_owner: bool
     is_active: bool
     created_at: datetime

@@ -41,9 +41,11 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
         counter += 1
 
     # Create business
+    widget_token = f"sb_pub_{uuid.uuid4().hex}"
     business = Business(
         name=data.business_name,
         slug=slug,
+        widget_token=widget_token,
         description=data.business_description,
     )
     db.add(business)
@@ -67,6 +69,7 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
         access_token=token,
         business_id=business.id,
         business_slug=business.slug,
+        widget_token=business.widget_token,
         user_id=user.id,
         full_name=user.full_name,
     )
@@ -85,11 +88,18 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     biz_result = await db.execute(select(Business).where(Business.id == user.business_id))
     business = biz_result.scalar_one()
 
+    # Ensure widget token exists
+    if not business.widget_token:
+        business.widget_token = f"sb_pub_{uuid.uuid4().hex}"
+        await db.commit()
+        await db.refresh(business)
+
     token = create_access_token({"sub": str(user.id), "business_id": str(business.id)})
     return TokenResponse(
         access_token=token,
         business_id=business.id,
         business_slug=business.slug,
+        widget_token=business.widget_token,
         user_id=user.id,
         full_name=user.full_name,
     )
@@ -104,16 +114,37 @@ async def login_form(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         raise HTTPException(status_code=401, detail="Invalid credentials")
     biz_result = await db.execute(select(Business).where(Business.id == user.business_id))
     business = biz_result.scalar_one()
+
+    if not business.widget_token:
+        business.widget_token = f"sb_pub_{uuid.uuid4().hex}"
+        await db.commit()
+        await db.refresh(business)
+
     token = create_access_token({"sub": str(user.id), "business_id": str(business.id)})
     return TokenResponse(
         access_token=token,
         business_id=business.id,
         business_slug=business.slug,
+        widget_token=business.widget_token,
         user_id=user.id,
         full_name=user.full_name,
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: User = Depends(get_current_active_user)):
-    return current_user
+async def me(current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    biz_result = await db.execute(select(Business).where(Business.id == current_user.business_id))
+    business = biz_result.scalar_one_or_none()
+    
+    return UserResponse(
+        id=current_user.id,
+        business_id=current_user.business_id,
+        business_name=business.name if business else None,
+        business_slug=business.slug if business else None,
+        widget_token=business.widget_token if business else None,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        is_owner=current_user.is_owner,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+    )

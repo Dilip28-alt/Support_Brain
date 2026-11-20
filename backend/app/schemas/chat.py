@@ -9,11 +9,19 @@ from app.models.models import MessageRole
 
 
 class ChatRequest(BaseModel):
-    business_slug: str
+    business_slug: Optional[str] = None
+    business_token: Optional[str] = None
     question: str = Field(..., min_length=1, max_length=2000)
     customer_name: Optional[str] = None
     customer_email: Optional[str] = None
     conversation_id: Optional[UUID] = None
+
+
+class PublicBusinessInfo(BaseModel):
+    name: str
+    slug: str
+    widget_token: str
+    description: Optional[str] = None
 
 
 class SourceChunk(BaseModel):
