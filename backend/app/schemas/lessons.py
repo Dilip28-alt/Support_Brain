@@ -45,13 +45,14 @@ class PendingQuestionResponse(BaseModel):
     business_id: UUID
     source: str
     customer_question: str
-    customer_name: Optional[str]
-    customer_email: Optional[str]
+    customer_name: Optional[str] = None
+    customer_email: Optional[str] = None
     status: str
-    owner_answer: Optional[str]
-    conversation_id: Optional[UUID]
-    email_message_id: Optional[UUID]
-    created_at: datetime
+    owner_answer: Optional[str] = None
+    conversation_id: Optional[UUID] = None
+    email_message_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

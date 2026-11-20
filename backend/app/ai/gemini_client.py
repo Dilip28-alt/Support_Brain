@@ -106,7 +106,7 @@ def call_ollama(prompt: str) -> str:
         "stream": False,
     }
     logger.info(f"Generating with Ollama model: {model} at {url}")
-    with httpx.Client(timeout=120.0) as client:
+    with httpx.Client(timeout=45.0) as client:
         resp = client.post(url, json=payload)
         if resp.status_code == 402:
             data = resp.json() if "application/json" in resp.headers.get("content-type", "") else {}
@@ -266,7 +266,9 @@ def generate_email_reply(
 
     reply = call_llm(prompt)
     if not reply or not reply.strip():
-        return FALLBACK
+        # Grounded fallback using retrieved knowledge if LLM is offline or timed out
+        first_chunk = knowledge_chunks[0]
+        return f"Thank you for reaching out to {business_name}.\n\nRegarding your inquiry: {first_chunk}\n\nBest regards,\n{business_name} Support Team"
     return reply
 
 

@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
+import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 import DashboardLayout from './layouts/DashboardLayout.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
@@ -23,31 +24,33 @@ function ProtectedRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        {/* Public */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/chat/:slug" element={<ChatWidgetPage />} />
-        <Route path="/chat" element={<ChatWidgetPage />} />
+      <ErrorBoundary>
+        <Routes>
+          {/* Public */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/chat/:slug" element={<ChatWidgetPage />} />
+          <Route path="/chat" element={<ChatWidgetPage />} />
 
-        {/* Protected dashboard */}
-        <Route path="/dashboard" element={
-          <ProtectedRoute>
-            <DashboardLayout />
-          </ProtectedRoute>
-        }>
-          <Route index element={<DashboardPage />} />
-          <Route path="knowledge" element={<KnowledgePage />} />
-          <Route path="conversations" element={<ConversationsPage />} />
-          <Route path="pending" element={<PendingPage />} />
-          <Route path="email" element={<EmailPage />} />
-          <Route path="lessons" element={<LessonsPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
+          {/* Protected dashboard */}
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<DashboardPage />} />
+            <Route path="knowledge" element={<KnowledgePage />} />
+            <Route path="conversations" element={<ConversationsPage />} />
+            <Route path="pending" element={<PendingPage />} />
+            <Route path="email" element={<EmailPage />} />
+            <Route path="lessons" element={<LessonsPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </ErrorBoundary>
     </AuthProvider>
   )
 }

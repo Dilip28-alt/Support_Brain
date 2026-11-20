@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.models.models import (
     EmailAccount, EmailMessage, EmailMessageDirection,
     EmailMessageStatus, EmailProcessingMode, PendingQuestion,
-    PendingQuestionSource, Business, Lesson
+    PendingQuestionSource, PendingQuestionStatus, Business, Lesson
 )
 from app.ai.gemini_client import generate_email_reply, compute_confidence_score
 from app.ai.search import search_knowledge, search_lessons
@@ -107,6 +107,8 @@ async def process_incoming_emails(
                     customer_email=email_msg.sender,
                 )
                 db.add(pending)
+                await db.flush()
+                email_msg.pending_question_id = pending.id
                 logger.info(f"Low confidence ({confidence:.2f}) email sent to Pending Questions")
         else:
             # Review mode: owner reviews draft before sending
@@ -188,7 +190,7 @@ async def dispatch_email_reply(
         )
         pq = pq_res.scalar_one_or_none()
         if pq:
-            pq.status = "resolved"
+            pq.status = PendingQuestionStatus.resolved
             pq.owner_answer = reply_body
             pq.resolved_at = now
 

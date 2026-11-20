@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.jsx'
+import { ErrorBoundary } from '../components/ErrorBoundary.jsx'
 import {
   LayoutDashboard, Brain, MessageSquare, HelpCircle,
   Mail, BookOpen, BarChart2, Settings, LogOut, Zap,
@@ -133,7 +134,9 @@ export default function DashboardLayout() {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto flex flex-col min-w-0">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   )

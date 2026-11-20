@@ -128,9 +128,10 @@ export default function KnowledgePage() {
     if (!chunks[id]) {
       try {
         const { data } = await api.get(`/knowledge/sources/${id}/chunks`)
-        setChunks(c => ({ ...c, [id]: data }))
+        setChunks(c => ({ ...c, [id]: Array.isArray(data) ? data : [] }))
       } catch {
         toast.error('Failed to load chunks')
+        setChunks(c => ({ ...c, [id]: [] }))
       }
     }
   }
@@ -369,11 +370,11 @@ export default function KnowledgePage() {
                 {expandedSource === src.id && (
                   <div className="mt-4 border-t border-slate-100 pt-4">
                     <h4 className="text-xs font-semibold text-slate-700 mb-2.5">
-                      Individual Vector Chunks ({chunks[src.id]?.length || 0})
+                      Individual Vector Chunks ({Array.isArray(chunks[src.id]) ? chunks[src.id].length : 0})
                     </h4>
                     {!chunks[src.id] ? (
                       <div className="text-xs text-slate-400 py-2">Loading chunks…</div>
-                    ) : chunks[src.id].length === 0 ? (
+                    ) : !Array.isArray(chunks[src.id]) || chunks[src.id].length === 0 ? (
                       <div className="text-xs text-slate-400 py-2">No chunks found.</div>
                     ) : (
                       <div className="space-y-2 max-h-72 overflow-y-auto pr-1">

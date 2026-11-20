@@ -27,8 +27,11 @@ export default function PendingPage() {
   const load = (status = statusFilter) => {
     setLoading(true)
     api.get(`/pending/?status_filter=${status}`)
-      .then((r) => setQuestions(r.data))
-      .catch(() => toast.error('Failed to load pending inquiries'))
+      .then((r) => setQuestions(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {
+        toast.error('Failed to load pending inquiries')
+        setQuestions([])
+      })
       .finally(() => setLoading(false))
   }
 
@@ -59,7 +62,15 @@ export default function PendingPage() {
         delete next[q.id]
         return next
       })
-      load(statusFilter)
+      // Immediately reflect the resolution in the card state so it never vanishes abruptly
+      setQuestions((prev) => {
+        if (!Array.isArray(prev)) return []
+        return prev.map((item) =>
+          item.id === q.id
+            ? { ...item, status: 'resolved', owner_answer: answer, resolved_at: new Date().toISOString() }
+            : item
+        )
+      })
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to resolve question')
     } finally {
@@ -72,7 +83,7 @@ export default function PendingPage() {
     try {
       await api.delete(`/pending/${q.id}`)
       toast.success('Question dismissed')
-      load(statusFilter)
+      setQuestions((prev) => (Array.isArray(prev) ? prev.filter((item) => item.id !== q.id) : []))
     } catch {
       toast.error('Failed to dismiss question')
     }
@@ -96,7 +107,7 @@ export default function PendingPage() {
         <div className="flex bg-slate-100 p-1 rounded-xl self-start">
           <button
             onClick={() => setStatusFilter('open')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               statusFilter === 'open'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-500 hover:text-slate-900'
@@ -106,13 +117,23 @@ export default function PendingPage() {
           </button>
           <button
             onClick={() => setStatusFilter('resolved')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               statusFilter === 'resolved'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
             Resolved History
+          </button>
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              statusFilter === 'all'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            All Questions
           </button>
         </div>
       </div>
@@ -123,7 +144,7 @@ export default function PendingPage() {
           <Loader2 size={20} className="animate-spin text-blue-600 mr-2" />
           Loading pending inquiries…
         </div>
-      ) : questions.length === 0 ? (
+      ) : (!Array.isArray(questions) || questions.length === 0) ? (
         <div className="bg-white rounded-2xl border border-slate-200 text-center py-16 px-4">
           <CheckCircle size={44} className="mx-auto mb-3 text-emerald-500" />
           <h3 className="text-base font-semibold text-slate-800">
@@ -134,11 +155,21 @@ export default function PendingPage() {
               ? 'There are no pending customer questions requiring your attention right now.'
               : 'Resolved inquiries will appear here after you answer them.'}
           </p>
+          {statusFilter === 'open' && (
+            <button
+              onClick={() => setStatusFilter('resolved')}
+              className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+            >
+              <ShieldCheck size={14} />
+              View Resolved Inquiries & Verified Lessons
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
           {questions.map((q) => {
-            const isEmail = q.source === 'email'
+            if (!q || !q.id) return null
+            const isEmail = (q.source || '').toLowerCase() === 'email'
             const isResolved = q.status === 'resolved'
 
             return (
@@ -170,7 +201,7 @@ export default function PendingPage() {
                         </span>
                         <span className="text-xs text-slate-400 flex items-center gap-1">
                           <Clock size={11} />
-                          {new Date(q.created_at).toLocaleString()}
+                          {q.created_at ? new Date(q.created_at).toLocaleString() : 'Recently'}
                         </span>
                       </div>
 
