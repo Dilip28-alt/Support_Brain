@@ -97,7 +97,7 @@ def _get_gen_model():
 
 
 def call_ollama(prompt: str) -> str:
-    """Send prompt to local/cloud Ollama endpoint."""
+    """Send prompt to local/cloud Ollama endpoint with fast fail if offline."""
     model = settings.OLLAMA_MODEL or "gemma4:31b-cloud"
     url = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/generate"
     payload = {
@@ -105,37 +105,20 @@ def call_ollama(prompt: str) -> str:
         "prompt": prompt,
         "stream": False,
     }
-    logger.info(f"Generating with Ollama model: {model} at {url}")
-    with httpx.Client(timeout=45.0) as client:
-        resp = client.post(url, json=payload)
-        if resp.status_code == 402:
-            data = resp.json() if "application/json" in resp.headers.get("content-type", "") else {}
-            err_msg = data.get("error", "Ollama Cloud credits required.")
-            logger.warning(f"Ollama Cloud 402: {err_msg}")
-
-            # Check if there are local offline models installed in Ollama
-            try:
-                tags_resp = client.get(f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags")
-                if tags_resp.status_code == 200:
-                    models_list = tags_resp.json().get("models", [])
-                    local_models = [m["name"] for m in models_list if not m.get("name", "").endswith("-cloud")]
-                    if local_models:
-                        fallback_model = local_models[0]
-                        logger.info(f"Auto-switching from cloud model to local Ollama model: {fallback_model}")
-                        retry_resp = client.post(url, json={"model": fallback_model, "prompt": prompt, "stream": False})
-                        if retry_resp.status_code == 200:
-                            return retry_resp.json().get("response", "").strip()
-            except Exception as le:
-                logger.warning(f"Local Ollama model fallback check failed: {le}")
-
-            raise RuntimeError(f"Ollama Cloud model '{model}' requires credits: {err_msg}")
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("response", "").strip()
+    try:
+        # Fast 2.0s connect timeout so cloud servers don't hang if Ollama is not installed
+        with httpx.Client(timeout=httpx.Timeout(10.0, connect=2.0)) as client:
+            resp = client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", "").strip()
+    except Exception as e:
+        logger.warning(f"Ollama unavailable ({e}), continuing...")
+    return ""
 
 
 def call_gemini(prompt: str) -> str:
-    """Send prompt to Gemini API with model fallback and REST backup."""
+    """Send prompt to Gemini API with fast timeout and quota-exhaustion protection."""
     candidates = []
     if settings.GEMINI_MODEL:
         candidates.append(settings.GEMINI_MODEL)
@@ -148,18 +131,23 @@ def call_gemini(prompt: str) -> str:
         model_name = cand if cand.startswith("models/") else f"models/{cand}"
         try:
             m = genai.GenerativeModel(model_name)
-            response = m.generate_content(prompt)
+            response = m.generate_content(prompt, request_options={"timeout": 8.0})
             if response and response.text:
                 return response.text.strip()
         except Exception as e:
-            logger.warning(f"Gemini model {model_name} failed ({e}), trying next candidate...")
+            err_str = str(e)
+            logger.warning(f"Gemini model {model_name} failed: {err_str[:120]}")
+            # If project quota exceeded (429), break immediately — do not loop and freeze
+            if "429" in err_str or "Quota exceeded" in err_str or "ResourceExhausted" in type(e).__name__:
+                logger.warning("Gemini daily quota limit reached on this API key. Using grounded knowledge fallback.")
+                break
             continue
 
-    # Fallback to direct HTTP REST via httpx if google-generativeai SDK hits network/grpc issues
+    # Fallback to direct HTTP REST with fast timeout
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={settings.GEMINI_API_KEY}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=6.0) as client:
             resp = client.post(url, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
@@ -171,27 +159,18 @@ def call_gemini(prompt: str) -> str:
 
 
 def call_llm(prompt: str) -> str:
-    """Dispatch to Ollama or Gemini based on settings with automatic fallback."""
-    provider = (settings.LLM_PROVIDER or "ollama").lower().strip()
+    """Dispatch to Gemini or Ollama based on settings with fast fallback."""
+    provider = (settings.LLM_PROVIDER or "gemini").lower().strip()
     if provider == "ollama":
-        try:
-            return call_ollama(prompt)
-        except Exception as e:
-            logger.warning(f"Ollama generation failed ({e}). Auto-falling back to Gemini.")
-            try:
-                return call_gemini(prompt)
-            except Exception as ge:
-                logger.error(f"Gemini fallback also failed ({ge}).")
-                return ""
-    try:
+        ans = call_ollama(prompt)
+        if ans:
+            return ans
         return call_gemini(prompt)
-    except Exception as ge:
-        logger.warning(f"Gemini generation failed ({ge}). Trying Ollama fallback...")
-        try:
-            return call_ollama(prompt)
-        except Exception as oe:
-            logger.error(f"Ollama fallback also failed ({oe}).")
-            return ""
+    else:
+        ans = call_gemini(prompt)
+        if ans:
+            return ans
+        return call_ollama(prompt)
 
 
 def generate_answer(

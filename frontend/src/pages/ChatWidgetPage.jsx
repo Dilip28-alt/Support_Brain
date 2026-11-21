@@ -17,6 +17,7 @@ import {
 
 const publicApi = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 45000,
 })
 
 export default function ChatWidgetPage() {
@@ -152,11 +153,14 @@ export default function ChatWidgetPage() {
       ])
     } catch (err) {
       console.error('Chat error:', err)
+      const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout')
       setMessages((m) => [
         ...m,
         {
           role: 'assistant',
-          content: 'Sorry, I encountered a temporary connection issue. Please try asking again.',
+          content: isTimeout
+            ? 'The server is currently waking up from cold start. Please click Send once more in a few seconds!'
+            : 'Sorry, I encountered a temporary connection issue. Please try asking again.',
           id: 'err-' + Date.now(),
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           sources: [],
