@@ -1,6 +1,8 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
+import { prewarmBackend } from './services/api.js'
 import DashboardLayout from './layouts/DashboardLayout.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
@@ -22,6 +24,10 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    prewarmBackend()
+  }, [])
+
   return (
     <AuthProvider>
       <ErrorBoundary>

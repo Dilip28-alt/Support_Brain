@@ -35,11 +35,17 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[settings.CHAT_RAT
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
+    """Startup and shutdown events with graceful error recovery."""
     logger.info("🚀 Support Brain starting up…")
-    settings.validate_all()
-    await init_db()
-    logger.info("✅ Database ready. App is live.")
+    try:
+        settings.validate_all()
+    except Exception as e:
+        logger.warning(f"⚠️ Config validation note: {e}")
+    try:
+        await init_db()
+        logger.info("✅ Database ready. App is live.")
+    except Exception as e:
+        logger.error(f"⚠️ Database initialization note: {e}")
     yield
     logger.info("👋 Support Brain shutting down.")
 

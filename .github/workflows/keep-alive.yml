@@ -1,0 +1,16 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free tier from sleeping (15 min sleep timeout)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  keep-awake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Backend Health Endpoint
+        run: |
+          echo "Pinging Support Brain API..."
+          curl -sSf -m 60 "https://support-brain-api.onrender.com/health" || echo "Backend waking up..."
