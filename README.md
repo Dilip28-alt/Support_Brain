@@ -242,6 +242,7 @@ support-brain/
 │   │   ├── test_phase7_8_9_continuous_learning.py   # Pending questions, lessons, feedback loop
 │   │   └── test_phase10_11_email.py                  # Gmail OAuth, Review/Auto modes, thread tracking
 │   ├── requirements.txt
+│   ├── pytest.ini        # Pytest configuration with pythonpath = .
 │   ├── alembic.ini
 │   └── render.yaml
 │
@@ -396,14 +397,17 @@ The test suite covers the complete application lifecycle across **7 specialized 
 ```bash
 cd backend
 
-# Run all 7 test suites
+# Run all 7 test suites (automatically discovers app module via pytest.ini)
 pytest tests/ -v
 
-# Run a specific test suite
-pytest tests/test_phase5_6_rag.py -v
+# Or run via Python module mode (cross-platform compatible on Windows/Linux/macOS)
+python -m pytest tests/ -v
 
-# Run with short traceback on failure
-pytest tests/ -v --tb=short
+# Run a specific test suite (e.g. foundational utilities)
+pytest tests/test_main.py -v
+
+# Run with short traceback on failure and stop at the first error
+pytest tests/ -v -x --tb=short
 ```
 
 ### Test Suites Breakdown
