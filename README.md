@@ -234,7 +234,13 @@ support-brain/
 │   │   ├── env.py
 │   │   └── versions/0001_initial.py
 │   ├── tests/
-│   │   └── test_main.py
+│   │   ├── test_main.py                              # Core utilities, JWT, bcrypt, chunking, encryption
+│   │   ├── test_phase2_auth.py                       # Multi-tenant auth & widget token issuance
+│   │   ├── test_phase2_full_two_businesses.py        # Two-tenant credential & resource isolation
+│   │   ├── test_phase4_knowledge.py                  # Text, PDF, URL ingestion & chunking
+│   │   ├── test_phase5_6_rag.py                      # RAG pipeline, pgvector, citations, fallback
+│   │   ├── test_phase7_8_9_continuous_learning.py   # Pending questions, lessons, feedback loop
+│   │   └── test_phase10_11_email.py                  # Gmail OAuth, Review/Auto modes, thread tracking
 │   ├── requirements.txt
 │   ├── alembic.ini
 │   └── render.yaml
@@ -383,18 +389,53 @@ App available at: http://localhost:5173
 
 ## Testing
 
+The test suite covers the complete application lifecycle across **7 specialized test suites**, ranging from low-level crypto utilities up to end-to-end multi-tenant RAG and Gmail pipelines.
+
+### Running Tests
+
 ```bash
 cd backend
+
+# Run all 7 test suites
 pytest tests/ -v
+
+# Run a specific test suite
+pytest tests/test_phase5_6_rag.py -v
+
+# Run with short traceback on failure
+pytest tests/ -v --tb=short
 ```
 
-**Tests cover:**
-- Password hashing & JWT creation
-- Text chunking & encryption utilities
-- Business registration & login
-- Adding text knowledge
-- Business data isolation
-- Analytics endpoint
+### Test Suites Breakdown
+
+| Test Suite | Purpose & Coverage | Key Assertions / Examples |
+|---|---|---|
+| **1. `test_main.py`** | Baseline smoke tests and core security/processing utilities. | • Bcrypt password hashing & verification<br>• JWT creation and payload decoding<br>• Text chunking (`chunk_size=100`, `overlap=10`)<br>• Fernet token encryption & decryption roundtrips |
+| **2. `test_phase2_auth.py`** | Multi-tenant authentication, token issuance, and protected endpoints. | • Owner registration with auto-generated `widget_token` (`sb_pub_...`)<br>• JWT login and authenticated `/api/auth/me` verification<br>• Access control guards on dashboard routes |
+| **3. `test_phase2_full_two_businesses.py`** | Strict cross-tenant data isolation and security boundary verification. | • Simultaneous registration of **Business Alpha** and **Business Beta**<br>• Proves Alpha's JWT token cannot query or modify Beta's workspace<br>• Verifies tenant database query filtering |
+| **4. `test_phase4_knowledge.py`** | Multi-format Knowledge Brain ingestion pipeline. | • Plain text document chunking & database persistence<br>• Multi-page PDF text extraction using PyMuPDF (`fitz`)<br>• Website URL ingestion with SSRF protection against internal IPs |
+| **5. `test_phase5_6_rag.py`** | Public customer chat widget and RAG pipeline. | • Serving `/widget.js` embed script with CORS headers<br>• Vector semantic search with `pgvector`<br>• Grounded answer generation with source chunk citations<br>• Unknown-question fallback to `"Thank you! The team will reply to you soon."` |
+| **6. `test_phase7_8_9_continuous_learning.py`** | Closed-loop self-learning system and feedback. | • Automatic Pending Question creation on low confidence<br>• Owner answer resolution via "Add answer to Brain"<br>• Automatic Lesson generation from "Bad" feedback<br>• "Ask This Question Again" side-by-side comparison |
+| **7. `test_phase10_11_email.py`** | Gmail integration and autonomous email pipeline. | • Gmail OAuth 2.0 URL generation and callback handling<br>• **Review Mode**: AI-generated drafts with owner approval<br>• **Auto Mode**: High-confidence automated replies<br>• Thread preservation (`In-Reply-To`, `References`) and duplicate reply prevention |
+
+### Example Test Commands
+
+```bash
+# 1. Test Multi-Tenant Authentication & Isolation
+pytest tests/test_phase2_auth.py tests/test_phase2_full_two_businesses.py -v
+
+# 2. Test Knowledge Brain Ingestion & Chunking
+pytest tests/test_phase4_knowledge.py -v
+
+# 3. Test RAG Search & Chat Grounding
+pytest tests/test_phase5_6_rag.py -v
+
+# 4. Test Lessons, Pending Questions & Feedback Loop
+pytest tests/test_phase7_8_9_continuous_learning.py -v
+
+# 5. Test Gmail Integration & Email Pipeline
+pytest tests/test_phase10_11_email.py -v
+```
 
 ---
 
