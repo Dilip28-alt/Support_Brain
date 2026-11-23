@@ -224,6 +224,19 @@ def generate_answer(
     answer = call_llm(prompt)
     if not answer or not answer.strip():
         # Fallback if external LLM generation is temporarily offline or rate-limited:
+        import re
+        stop_words = {"does", "what", "have", "provide", "provides", "about", "your", "with", "from", "that", "this", "help", "please", "thanks", "thank"}
+        stop_words |= set(re.findall(r'\b\w+\b', business_name.lower()))
+        substantive_query = {w for w in re.findall(r'\b\w{4,}\b', question.lower()) if w not in stop_words}
+        matched = False
+        for chunk in knowledge_chunks:
+            chunk_words = set(re.findall(r'\b\w{4,}\b', chunk.lower()))
+            if substantive_query & chunk_words:
+                matched = True
+                break
+        if not matched:
+            return FALLBACK
+
         top_chunk = knowledge_chunks[0]
         if "Answer:" in top_chunk:
             ans_part = top_chunk.split("Answer:", 1)[1].strip()
@@ -277,7 +290,20 @@ def generate_email_reply(
 
     reply = call_llm(prompt)
     if not reply or not reply.strip():
-        # Grounded fallback using retrieved knowledge if LLM is offline or timed out
+        # Fallback if external LLM generation is temporarily offline or rate-limited:
+        # Only use knowledge chunk if there is meaningful topical overlap, else return FALLBACK
+        import re
+        stop_words = {"does", "what", "have", "provide", "provides", "about", "your", "with", "from", "that", "this", "help", "please", "thanks", "thank"}
+        stop_words |= set(re.findall(r'\b\w+\b', business_name.lower()))
+        substantive_query = {w for w in re.findall(r'\b\w{4,}\b', customer_email_body.lower()) if w not in stop_words}
+        matched = False
+        for chunk in knowledge_chunks:
+            chunk_words = set(re.findall(r'\b\w{4,}\b', chunk.lower()))
+            if substantive_query & chunk_words:
+                matched = True
+                break
+        if not matched:
+            return FALLBACK
         first_chunk = knowledge_chunks[0]
         return f"Thank you for reaching out to {business_name}.\n\nRegarding your inquiry: {first_chunk}\n\nBest regards,\n{business_name} Support Team"
     return reply
@@ -287,17 +313,44 @@ def compute_confidence_score(
     question: str,
     answer: str,
     top_similarity: float,
+    chunks: Optional[List[str]] = None,
 ) -> float:
     """
-    Compute a simple confidence score based on:
+    Compute a grounded confidence score based on:
     - top semantic similarity score (primary signal)
-    - whether the answer is the fallback phrase
+    - whether the answer is the fallback phrase or indicates missing/insufficient info
+    - topical keyword grounding between question and retrieved chunks
     
     Returns 0.0–1.0. Does NOT use self-reported LLM confidence.
     """
-    FALLBACK = "Thank you! The team will reply to you soon."
-    if answer.strip() == FALLBACK:
+    FALLBACKS = [
+        "Thank you! The team will reply to you soon.",
+        "Thank you for reaching out. Our team will review your inquiry and respond shortly.",
+    ]
+    if any(answer.strip() == fb for fb in FALLBACKS):
         return 0.0
-    # Confidence primarily driven by retrieval quality
+
+    ans_lower = answer.lower()
+    negative_signals = [
+        "do not provide", "does not provide", "do not offer", "does not offer",
+        "do not have information", "no information", "not mentioned in",
+        "outside our documentation", "review your inquiry", "review your request",
+        "cannot answer", "unable to provide", "team will review", "team will respond",
+    ]
+    if any(sig in ans_lower for sig in negative_signals):
+        return 0.0
+
+    # Grounding check: ensure substantive subject matter of query exists in chunks
+    if chunks:
+        import re
+        stop_words = {"does", "what", "have", "provide", "provides", "about", "your", "with", "from", "that", "this", "help", "please", "thanks", "thank"}
+        substantive_query = {w for w in re.findall(r'\b\w{4,}\b', question.lower()) if w not in stop_words}
+        if substantive_query:
+            all_chunk_words = set(re.findall(r'\b\w{4,}\b', " ".join(chunks).lower()))
+            overlap = substantive_query & all_chunk_words
+            if not overlap and top_similarity < 0.75:
+                # Completely ungrounded query topic
+                return 0.0
+
     score = min(top_similarity, 1.0)
     return round(score, 4)

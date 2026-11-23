@@ -52,7 +52,22 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Enable pgvector extension (idempotent)."""
+    """Enable pgvector extension (idempotent) and ensure tables/columns exist."""
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        logger.info("✅ pgvector extension enabled.")
+        await conn.execute(text("""
+            ALTER TABLE email_messages 
+            ADD COLUMN IF NOT EXISTS related_message_id UUID REFERENCES email_messages(id) ON DELETE SET NULL;
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_email_messages_related_message_id ON email_messages (related_message_id);
+        """))
+        try:
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_email_reply_outgoing 
+                ON email_messages (related_message_id) 
+                WHERE direction = 'outgoing';
+            """))
+        except Exception:
+            pass
+        logger.info("✅ Database schema verified.")

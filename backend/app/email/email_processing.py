@@ -66,14 +66,19 @@ async def process_incoming_emails(
         if lesson_answer:
             draft = f"Thank you for contacting {business.name}.\n\n{lesson_answer}\n\nBest regards,\n{business.name} Support Team"
             confidence = 0.98
-        else:
+        elif chunks:
             draft = generate_email_reply(
                 customer_email_body=body,
                 subject=email_msg.subject or "",
                 knowledge_chunks=chunks,
                 business_name=business.name,
             )
-            confidence = compute_confidence_score(body, draft, top_sim)
+            confidence = compute_confidence_score(body, draft, top_sim, chunks=chunks)
+            if draft.strip() == "Thank you for reaching out. Our team will review your inquiry and respond shortly.":
+                confidence = 0.0
+        else:
+            draft = "Thank you for reaching out. Our team will review your inquiry and respond shortly."
+            confidence = 0.0
 
         email_msg.draft_reply = draft
 
@@ -93,8 +98,19 @@ async def process_incoming_emails(
                     email_msg.sent_at = datetime.now(timezone.utc)
                     logger.info(f"Auto-sent email reply to {email_msg.sender} (confidence={confidence:.2f})")
                 except Exception as e:
-                    logger.error(f"Auto-send failed ({e}), saving as draft")
+                    logger.error(f"Auto-send failed ({e}), saving as draft and queuing to pending")
                     email_msg.status = EmailMessageStatus.draft
+                    pending = PendingQuestion(
+                        business_id=business.id,
+                        source=PendingQuestionSource.email,
+                        email_message_id=email_msg.id,
+                        customer_question=body[:1000],
+                        customer_name=email_msg.sender,
+                        customer_email=email_msg.sender,
+                    )
+                    db.add(pending)
+                    await db.flush()
+                    email_msg.pending_question_id = pending.id
             else:
                 # Auto mode but low confidence: queue into Pending Questions
                 email_msg.status = EmailMessageStatus.draft
@@ -128,7 +144,7 @@ async def dispatch_email_reply(
     """
     # Guard: Never send the same reply twice
     if email_msg.status == EmailMessageStatus.sent:
-        raise ValueError("This email has already been replied to.")
+        raise ValueError("This email has already been replied to. Duplicate sending is not allowed.")
 
     subject = format_reply_subject(email_msg.subject)
 
@@ -166,12 +182,13 @@ async def dispatch_email_reply(
     email_msg.sent_at = now
     email_msg.draft_reply = reply_body
 
-    # 2. Save outgoing message record (Save every email in and out)
+    # 2. Save outgoing message record (Save every email in and out, linked via related_message_id)
     outgoing_msg = EmailMessage(
         business_id=account.business_id,
         email_account_id=account.id,
         gmail_message_id=f"out-{uuid.uuid4().hex[:12]}",
         gmail_thread_id=email_msg.gmail_thread_id,
+        related_message_id=email_msg.id,
         direction=EmailMessageDirection.outgoing,
         subject=subject,
         sender=account.email_address,

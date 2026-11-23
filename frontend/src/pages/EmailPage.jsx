@@ -130,7 +130,7 @@ export default function EmailPage() {
 
   const sendReply = async (email) => {
     if (email.status === 'sent') {
-      toast.error('This email has already been replied to!')
+      toast.error('This email has already been replied to. Duplicate sending is not allowed.')
       return
     }
     setSending(email.id)
@@ -446,12 +446,20 @@ export default function EmailPage() {
                       From: <strong className="text-gray-700">{email.sender}</strong> → To:{' '}
                       <span className="text-gray-700">{email.recipient}</span>
                     </p>
-                    <p className="text-xs text-gray-400">
-                      Thread ID: {email.gmail_thread_id} ·{' '}
-                      {email.received_at
-                        ? new Date(email.received_at).toLocaleString()
-                        : new Date(email.created_at).toLocaleString()}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400 mt-1">
+                      <span>Msg ID: <code className="text-gray-600 bg-gray-100 px-1 py-0.5 rounded font-mono text-[10px]">{email.gmail_message_id}</code></span>
+                      <span>Thread ID: <code className="text-gray-600 bg-gray-100 px-1 py-0.5 rounded font-mono text-[10px]">{email.gmail_thread_id}</code></span>
+                      {email.related_message_id && (
+                        <span>Reply To: <code className="text-purple-700 bg-purple-50 px-1 py-0.5 rounded font-mono text-[10px]">{email.related_message_id}</code></span>
+                      )}
+                      <span>
+                        {email.sent_at
+                          ? `Sent: ${new Date(email.sent_at).toLocaleString()}`
+                          : email.received_at
+                          ? `Received: ${new Date(email.received_at).toLocaleString()}`
+                          : `Created: ${new Date(email.created_at).toLocaleString()}`}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="shrink-0">

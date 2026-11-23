@@ -243,6 +243,7 @@ class EmailMessage(Base):
     body_html = Column(Text, nullable=True)
     draft_reply = Column(Text, nullable=True)
     status = Column(SAEnum(EmailMessageStatus), default=EmailMessageStatus.pending)
+    related_message_id = Column(UUID(as_uuid=True), ForeignKey("email_messages.id", ondelete="SET NULL"), nullable=True, index=True)
     pending_question_id = Column(UUID(as_uuid=True), ForeignKey("pending_questions.id", ondelete="SET NULL"), nullable=True)
     received_at = Column(DateTime(timezone=True), nullable=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)

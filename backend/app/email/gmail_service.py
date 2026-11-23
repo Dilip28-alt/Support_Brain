@@ -320,31 +320,86 @@ async def send_email_reply(
     email_message_id: UUID,
     reply_body: Optional[str],
 ) -> EmailMessage:
-    """Owner-triggered send from review mode."""
+    """
+    Owner-triggered send from review mode with strict duplicate reply prevention,
+    row-level concurrency locking, and uncertain-state reconciliation.
+    """
+    # 1. Acquire row-level lock on the incoming email to prevent race conditions
     result = await db.execute(
-        select(EmailMessage).where(
+        select(EmailMessage)
+        .where(
             EmailMessage.id == email_message_id,
             EmailMessage.business_id == business_id,
         )
+        .with_for_update()
     )
     email_msg = result.scalar_one_or_none()
     if not email_msg:
         raise ValueError("Email message not found")
 
+    # 2. Check if already replied to in database
     if email_msg.status == EmailMessageStatus.sent:
-        raise ValueError("This email has already been sent")
+        raise ValueError("This email has already been replied to. Duplicate sending is not allowed.")
+
+    # 3. Check if an outgoing reply record already exists for this incoming message
+    existing_reply = await db.execute(
+        select(EmailMessage).where(
+            EmailMessage.related_message_id == email_msg.id,
+            EmailMessage.direction == EmailMessageDirection.outgoing,
+            EmailMessage.status == EmailMessageStatus.sent,
+        )
+    )
+    if existing_reply.scalar_one_or_none():
+        email_msg.status = EmailMessageStatus.sent
+        await db.commit()
+        raise ValueError("This email has already been replied to. Duplicate sending is not allowed.")
 
     body_to_send = reply_body or email_msg.draft_reply
-    if not body_to_send:
+    if not body_to_send or not body_to_send.strip():
         raise ValueError("No reply body provided")
 
-    # Get email account
+    # 4. Get email account
     account_result = await db.execute(
         select(EmailAccount).where(EmailAccount.id == email_msg.email_account_id)
     )
     account = account_result.scalar_one_or_none()
     if not account:
         raise ValueError("Email account not found")
+
+    # 5. Check provider type
+    is_smtp_imap = False
+    if account.encrypted_access_token:
+        try:
+            raw_creds = json.loads(decrypt_token(account.encrypted_access_token))
+            if raw_creds.get("provider") == "smtp_imap":
+                is_smtp_imap = True
+        except Exception:
+            pass
+
+    # 6. Uncertain state reconciliation with Gmail:
+    # If a prior send attempt succeeded at Gmail but crashed before DB commit,
+    # reconcile DB status before blindly attempting another send.
+    if not is_smtp_imap and email_msg.gmail_thread_id:
+        try:
+            service, _ = _build_gmail_service(account)
+            thread = service.users().threads().get(
+                userId="me", id=email_msg.gmail_thread_id
+            ).execute()
+            messages = thread.get("messages", [])
+            for m in messages:
+                hdrs = {h.get("name", "").lower(): h.get("value", "") for h in m.get("payload", {}).get("headers", [])}
+                in_reply = hdrs.get("in-reply-to", "")
+                from_hdr = hdrs.get("from", "")
+                if account.email_address.lower() in from_hdr.lower() and email_msg.gmail_message_id in in_reply:
+                    # Gmail already contains the reply. Reconcile DB to sent.
+                    email_msg.status = EmailMessageStatus.sent
+                    email_msg.sent_at = datetime.now(timezone.utc)
+                    await db.commit()
+                    raise ValueError("This email has already been replied to. Duplicate sending is not allowed.")
+        except ValueError:
+            raise
+        except Exception as te:
+            logger.debug(f"Gmail thread reconciliation note: {te}")
 
     biz_result = await db.execute(
         select(Business).where(Business.id == business_id)

@@ -50,6 +50,8 @@ class ComposeEmailRequest(BaseModel):
 
 class EmailMessageResponse(BaseModel):
     id: UUID
+    business_id: UUID
+    email_account_id: UUID
     gmail_message_id: str
     gmail_thread_id: str
     direction: str
@@ -59,6 +61,7 @@ class EmailMessageResponse(BaseModel):
     body_text: Optional[str]
     draft_reply: Optional[str]
     status: EmailMessageStatus
+    related_message_id: Optional[UUID] = None
     received_at: Optional[datetime]
     sent_at: Optional[datetime]
     created_at: datetime
@@ -73,5 +76,5 @@ class EmailSendRequest(BaseModel):
 
 
 class EmailDraftUpdate(BaseModel):
-    email_message_id: UUID
+    email_message_id: Optional[UUID] = None
     draft_reply: str

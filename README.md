@@ -136,13 +136,17 @@ Support Brain is a production-ready SaaS platform that lets businesses:
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID PK | |
-| business_id | UUID FK→businesses | |
+| business_id | UUID FK→businesses | Multi-tenant isolation |
 | email_account_id | UUID FK→email_accounts | |
 | gmail_message_id | VARCHAR(255) | Unique — idempotency key |
-| gmail_thread_id | VARCHAR(255) | Indexed |
+| gmail_thread_id | VARCHAR(255) | Indexed for email threading |
 | direction | ENUM(incoming,outgoing) | |
+| related_message_id | UUID FK→email_messages | Points to incoming email for outgoing replies (`uq_email_reply_outgoing` partial unique index) |
+| sender / recipient | VARCHAR(255) | Email addresses |
+| subject / body_text | TEXT | Stored plain-text and HTML body |
 | draft_reply | TEXT | AI-generated draft |
-| status | ENUM(pending,draft,sent,failed,skipped) | |
+| status | ENUM(pending,draft,sent,failed,skipped) | Current email state |
+| sent_at / received_at | TIMESTAMPTZ | Precise send/receive timestamps |
 
 ### Table: `lessons`
 | Column | Type | Notes |
@@ -240,7 +244,8 @@ support-brain/
 │   │   ├── test_phase4_knowledge.py                  # Text, PDF, URL ingestion & chunking
 │   │   ├── test_phase5_6_rag.py                      # RAG pipeline, pgvector, citations, fallback
 │   │   ├── test_phase7_8_9_continuous_learning.py   # Pending questions, lessons, feedback loop
-│   │   └── test_phase10_11_email.py                  # Gmail OAuth, Review/Auto modes, thread tracking
+│   │   ├── test_phase10_11_email.py                  # Gmail OAuth, Review/Auto modes, thread tracking
+│   │   └── test_email_safety.py                      # Comprehensive Email Safety, Duplicate Prevention (8 Scenarios)
 │   ├── requirements.txt
 │   ├── pytest.ini        # Pytest configuration with pythonpath = .
 │   ├── alembic.ini
@@ -280,6 +285,29 @@ support-brain/
 ├── .gitignore
 └── README.md
 ```
+
+---
+
+## Email Safety & Duplicate Reply Prevention Architecture
+
+Support Brain implements a multi-layer defense-in-depth safety mechanism to guarantee that no customer email can ever receive duplicate responses:
+
+1. **Frontend Guarding**:
+   - The Send button transitions to an in-flight loading spinner immediately upon being clicked.
+   - Once sent, the draft editor is replaced by a verified badge: `✓ Reply sent in thread · Duplicate send prevented`.
+   - The state persists across page refreshes from the backend message status.
+
+2. **Atomic Row-Level Database Locking**:
+   - The backend acquires an exclusive row lock (`with_for_update()`) on the incoming `EmailMessage` record within the transaction.
+   - Concurrent requests for the same email are serialized. The first request completes and marks the status as `sent`, while subsequent requests unblock, detect `status == sent`, and are rejected with HTTP 400 (`This email has already been replied to. Duplicate sending is not allowed.`).
+
+3. **Database-Level Partial Unique Index**:
+   - The database enforces `uq_email_reply_outgoing UNIQUE (related_message_id) WHERE direction = 'outgoing'`.
+   - PostgreSQL mathematically disallows more than one outgoing reply referencing the same incoming email message.
+
+4. **Uncertain-State Reconciliation with Gmail**:
+   - If an uncertain state occurs (e.g., network failure after Gmail API sent the reply but before the DB committed), Support Brain reconciles with the Gmail thread before attempting any send.
+   - If the thread already contains a sent message from the business address referencing the incoming message ID, Support Brain updates the DB status to `sent` and aborts duplicate sending.
 
 ---
 
@@ -397,14 +425,14 @@ The test suite covers the complete application lifecycle across **7 specialized 
 ```bash
 cd backend
 
-# Run all 7 test suites (automatically discovers app module via pytest.ini)
+# Run all 8 test suites (automatically discovers app module via pytest.ini)
 pytest tests/ -v
 
 # Or run via Python module mode (cross-platform compatible on Windows/Linux/macOS)
 python -m pytest tests/ -v
 
-# Run a specific test suite (e.g. foundational utilities)
-pytest tests/test_main.py -v
+# Run the comprehensive Email Safety & Duplicate Reply Prevention test suite
+pytest tests/test_email_safety.py -v
 
 # Run with short traceback on failure and stop at the first error
 pytest tests/ -v -x --tb=short
@@ -421,6 +449,7 @@ pytest tests/ -v -x --tb=short
 | **5. `test_phase5_6_rag.py`** | Public customer chat widget and RAG pipeline. | • Serving `/widget.js` embed script with CORS headers<br>• Vector semantic search with `pgvector`<br>• Grounded answer generation with source chunk citations<br>• Unknown-question fallback to `"Thank you! The team will reply to you soon."` |
 | **6. `test_phase7_8_9_continuous_learning.py`** | Closed-loop self-learning system and feedback. | • Automatic Pending Question creation on low confidence<br>• Owner answer resolution via "Add answer to Brain"<br>• Automatic Lesson generation from "Bad" feedback<br>• "Ask This Question Again" side-by-side comparison |
 | **7. `test_phase10_11_email.py`** | Gmail integration and autonomous email pipeline. | • Gmail OAuth 2.0 URL generation and callback handling<br>• **Review Mode**: AI-generated drafts with owner approval<br>• **Auto Mode**: High-confidence automated replies<br>• Thread preservation (`In-Reply-To`, `References`) and duplicate reply prevention |
+| **8. `test_email_safety.py`** | Comprehensive Email Safety, Duplicate Prevention, and History suite. | • **Test 1**: Polling idempotency (no duplicate incoming records on re-fetch)<br>• **Test 2**: Review Mode draft generation without auto-send<br>• **Test 3**: Review Mode dispatch & thread preservation<br>• **Test 4**: Strict duplicate reply rejection (HTTP 400)<br>• **Test 5**: Concurrency race condition prevention (`asyncio.gather` with DB row lock)<br>• **Test 6**: Email history with complete metadata (`direction`, `related_message_id`, timestamps)<br>• **Test 7**: Multi-tenant email history isolation across businesses<br>• **Test 8**: Uncertain Gmail send state reconciliation before retrying |
 
 ### Example Test Commands
 
@@ -439,6 +468,9 @@ pytest tests/test_phase7_8_9_continuous_learning.py -v
 
 # 5. Test Gmail Integration & Email Pipeline
 pytest tests/test_phase10_11_email.py -v
+
+# 6. Test Email Safety, Concurrency & History (All 8 Scenarios)
+pytest tests/test_email_safety.py -v
 ```
 
 ---
