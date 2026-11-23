@@ -267,6 +267,9 @@ async def send_email(
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Error in send_email: {e}", exc_info=True)
+        raise HTTPException(500, f"Email delivery error: {str(e)}")
 
 
 # ─────────────────────────────────────────────────────────────

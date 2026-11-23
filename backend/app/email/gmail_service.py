@@ -296,22 +296,43 @@ async def _generate_drafts(
 
 
 async def _send_reply(service, email_msg: EmailMessage, reply_body: str, from_email: str):
-    """Send a reply in the same Gmail thread."""
+    """Send a reply in the same Gmail thread, or start a new thread if threadId is synthetic."""
     import email as email_lib
     from email.mime.text import MIMEText
 
     msg = MIMEText(reply_body)
     msg["to"] = email_msg.sender
     msg["from"] = from_email
-    msg["subject"] = f"Re: {email_msg.subject or ''}"
-    msg["In-Reply-To"] = email_msg.gmail_message_id
-    msg["References"] = email_msg.gmail_message_id
+    subject = email_msg.subject or ""
+    msg["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    if email_msg.gmail_message_id:
+        msg["In-Reply-To"] = email_msg.gmail_message_id
+        msg["References"] = email_msg.gmail_message_id
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
-    service.users().messages().send(
-        userId="me",
-        body={"raw": raw, "threadId": email_msg.gmail_thread_id}
-    ).execute()
+
+    # Check if threadId is a genuine Google Gmail thread ID
+    # Google thread IDs are hex strings without prefixes like 'thread-' or 'sim-'
+    tid = email_msg.gmail_thread_id
+    is_synthetic = not tid or tid.startswith("thread-") or tid.startswith("sim-") or not all(c in "0123456789abcdefABCDEF" for c in tid)
+
+    body = {"raw": raw}
+    if not is_synthetic:
+        body["threadId"] = tid
+
+    try:
+        sent_resp = service.users().messages().send(userId="me", body=body).execute()
+    except HttpError as he:
+        # If Google rejects threadId with 400 "Invalid thread_id value", retry cleanly without threadId
+        if "thread" in str(he).lower():
+            logger.warning(f"Gmail threadId rejected ({he}), retrying send without threadId")
+            sent_resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+        else:
+            raise
+
+    # If Gmail assigned a real threadId and messageId, update email_msg
+    if sent_resp and sent_resp.get("threadId"):
+        email_msg.gmail_thread_id = sent_resp["threadId"]
 
 
 async def send_email_reply(
