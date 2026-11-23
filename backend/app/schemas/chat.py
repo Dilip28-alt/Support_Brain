@@ -22,6 +22,23 @@ class PublicBusinessInfo(BaseModel):
     slug: str
     widget_token: str
     description: Optional[str] = None
+    support_email: Optional[str] = None
+
+
+class PublicEmailInquiryRequest(BaseModel):
+    business_slug: Optional[str] = None
+    business_token: Optional[str] = None
+    sender_name: Optional[str] = "Customer"
+    sender_email: str = Field(..., min_length=3, max_length=255)
+    subject: str = Field(..., min_length=1, max_length=255)
+    message: str = Field(..., min_length=1, max_length=5000)
+
+
+class PublicEmailInquiryResponse(BaseModel):
+    status: str
+    message: str
+    email_id: UUID
+    thread_id: str
 
 
 class SourceChunk(BaseModel):

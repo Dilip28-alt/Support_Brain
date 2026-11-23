@@ -8,13 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.database import get_db
-from app.models.models import User, Conversation, Message, Business
+from app.models.models import (
+    User, Conversation, Message, Business,
+    EmailAccount, EmailMessage, EmailMessageDirection,
+    EmailMessageStatus, EmailProcessingMode, EmailAccountStatus
+)
 from app.schemas.chat import (
     ChatRequest, ChatResponse, ConversationResponse, MessageResponse,
-    FeedbackCreate, AskAgainRequest, AskAgainResponse, PublicBusinessInfo
+    FeedbackCreate, AskAgainRequest, AskAgainResponse, PublicBusinessInfo,
+    PublicEmailInquiryRequest, PublicEmailInquiryResponse
 )
 from app.services.chat_service import handle_chat, handle_ask_again, save_feedback
 from app.utils.auth import get_current_active_user
+import uuid
+from datetime import datetime, timezone
 
 router = APIRouter(tags=["chat"])
 
@@ -44,11 +51,22 @@ async def get_public_business_info(
     if not business:
         raise HTTPException(404, "Business not found or inactive")
 
+    # Fetch connected support email if available
+    acc_res = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.business_id == business.id,
+            EmailAccount.status == EmailAccountStatus.connected,
+        )
+    )
+    acc = acc_res.scalars().first()
+    support_email = acc.email_address if acc else f"support@{business.slug}.com"
+
     return PublicBusinessInfo(
         name=business.name,
         slug=business.slug,
         widget_token=business.widget_token or "",
         description=business.description,
+        support_email=support_email,
     )
 
 
@@ -105,6 +123,89 @@ async def public_chat(
         import logging
         logging.getLogger("support_brain").error(f"Chat unexpected error: {e}", exc_info=True)
         raise HTTPException(500, str(e))
+
+
+@router.post("/api/chat/public/email-inquiry", response_model=PublicEmailInquiryResponse)
+async def public_email_inquiry(
+    inquiry: PublicEmailInquiryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public customer email inquiry endpoint.
+    Allows customers on the public chat link to submit questions via email.
+    Saves incoming email, automatically drafts reply using RAG & Lessons,
+    and dispatches or routes to Review Mode / Pending Questions.
+    """
+    # 1. Resolve business
+    business = None
+    if inquiry.business_token:
+        res = await db.execute(
+            select(Business).where(Business.widget_token == inquiry.business_token.strip(), Business.is_active == True)
+        )
+        business = res.scalar_one_or_none()
+    elif inquiry.business_slug:
+        res = await db.execute(
+            select(Business).where(Business.slug.ilike(inquiry.business_slug.strip()), Business.is_active == True)
+        )
+        business = res.scalar_one_or_none()
+
+    if not business:
+        raise HTTPException(404, "Business not found or inactive")
+
+    # 2. Find or establish email account
+    acc_res = await db.execute(
+        select(EmailAccount).where(EmailAccount.business_id == business.id)
+    )
+    account = acc_res.scalars().first()
+    if not account:
+        account = EmailAccount(
+            business_id=business.id,
+            email_address=f"support@{business.slug}.com",
+            processing_mode=EmailProcessingMode.review,
+            status=EmailAccountStatus.connected,
+        )
+        db.add(account)
+        await db.flush()
+
+    # 3. Create incoming EmailMessage record
+    now = datetime.now(timezone.utc)
+    msg_id = f"pub-{uuid.uuid4().hex[:12]}"
+    thread_id = f"thread-{uuid.uuid4().hex[:12]}"
+    sender_display = (
+        f"{inquiry.sender_name.strip()} <{inquiry.sender_email.strip()}>"
+        if inquiry.sender_name
+        else inquiry.sender_email.strip()
+    )
+
+    email_msg = EmailMessage(
+        business_id=business.id,
+        email_account_id=account.id,
+        gmail_message_id=msg_id,
+        gmail_thread_id=thread_id,
+        direction=EmailMessageDirection.incoming,
+        subject=inquiry.subject.strip(),
+        sender=sender_display,
+        recipient=account.email_address,
+        body_text=inquiry.message.strip(),
+        status=EmailMessageStatus.pending,
+        received_at=now,
+    )
+    db.add(email_msg)
+    await db.flush()
+
+    # 4. Run Knowledge Brain + Lessons drafting pipeline
+    from app.email.email_processing import process_incoming_emails
+    await process_incoming_emails(db, [email_msg], business, account)
+
+    await db.commit()
+    await db.refresh(email_msg)
+
+    return PublicEmailInquiryResponse(
+        status="success",
+        message=f"Thank you, {inquiry.sender_name or 'customer'}! Your email inquiry has been received by {business.name}. We will review it and reply directly to {inquiry.sender_email}.",
+        email_id=email_msg.id,
+        thread_id=thread_id,
+    )
 
 
 # ─────── Authenticated dashboard ───────

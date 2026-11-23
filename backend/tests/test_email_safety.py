@@ -411,3 +411,29 @@ async def test_email_safety_full_suite():
         async with AsyncSessionLocal() as session:
             chk_msg = await session.get(EmailMessage, sim3_id)
             assert chk_msg.status == EmailMessageStatus.sent
+
+        # ─────────────────────────────────────────────────────────────
+        # TEST 9: Public Customer Email Inquiry from Chat Link
+        # Customer asks a question through email on the public chat link
+        # ─────────────────────────────────────────────────────────────
+        pub_inquiry_res = await client.post("/api/chat/public/email-inquiry", json={
+            "business_slug": biz_a_slug,
+            "sender_name": "Public Visitor",
+            "sender_email": "visitor@publicweb.com",
+            "subject": "Inquiry about refund guarantee",
+            "message": "Hello, how many days do I have to return an item under your guarantee?",
+        })
+        assert pub_inquiry_res.status_code == 200
+        pub_data = pub_inquiry_res.json()
+        assert pub_data["status"] == "success"
+        pub_email_id = pub_data["email_id"]
+
+        # Verify the inquiry is saved in Business A's email records with AI draft ready for review
+        async with AsyncSessionLocal() as session:
+            pub_chk = await session.get(EmailMessage, pub_email_id)
+            assert pub_chk is not None
+            assert pub_chk.business_id == biz_a_id
+            assert pub_chk.direction == EmailMessageDirection.incoming
+            assert "visitor@publicweb.com" in pub_chk.sender
+            assert pub_chk.draft_reply is not None
+            assert "30-day" in pub_chk.draft_reply or "refund" in pub_chk.draft_reply.lower()
