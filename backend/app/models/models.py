@@ -26,6 +26,7 @@ class MessageRole(str, enum.Enum):
     user = "user"
     assistant = "assistant"
     system = "system"
+    owner = "owner"
 
 class PendingQuestionSource(str, enum.Enum):
     chat = "chat"

@@ -4,7 +4,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
-import { TrendingUp, TrendingDown, MessageSquare, BookOpen, HelpCircle, Brain } from 'lucide-react'
+import { TrendingUp, TrendingDown, MessageSquare, BookOpen, HelpCircle, Brain, UserCheck } from 'lucide-react'
 
 function StatCard({ label, value, Icon, colorClass }) {
   return (
@@ -38,14 +38,15 @@ export default function AnalyticsPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Analytics</h1>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Questions"   value={data.total_questions}   Icon={MessageSquare} colorClass="bg-blue-500" />
-        <StatCard label="AI Answers"        value={data.total_ai_answers}  Icon={Brain}         colorClass="bg-brand-600" />
-        <StatCard label="Good Answers"      value={data.good_answers}      Icon={TrendingUp}    colorClass="bg-green-500" />
-        <StatCard label="Bad Answers"       value={data.bad_answers}       Icon={TrendingDown}  colorClass="bg-red-500" />
-        <StatCard label="Pending Questions" value={data.pending_questions} Icon={HelpCircle}    colorClass="bg-yellow-500" />
-        <StatCard label="Lessons Created"   value={data.lessons_created}   Icon={BookOpen}      colorClass="bg-purple-500" />
-        <StatCard label="Lessons Used"      value={data.lessons_used}      Icon={BookOpen}      colorClass="bg-indigo-500" />
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Total Questions"   value={data.total_questions}      Icon={MessageSquare} colorClass="bg-blue-500" />
+        <StatCard label="AI Answers"        value={data.total_ai_answers}     Icon={Brain}         colorClass="bg-brand-600" />
+        <StatCard label="Owner answers"     value={data.total_owner_answers}  Icon={UserCheck}     colorClass="bg-indigo-600" />
+        <StatCard label="Good Answers"      value={data.good_answers}         Icon={TrendingUp}    colorClass="bg-green-500" />
+        <StatCard label="Bad Answers"       value={data.bad_answers}          Icon={TrendingDown}  colorClass="bg-red-500" />
+        <StatCard label="Pending Questions" value={data.pending_questions}    Icon={HelpCircle}    colorClass="bg-yellow-500" />
+        <StatCard label="Lessons Created"   value={data.lessons_created}      Icon={BookOpen}      colorClass="bg-purple-500" />
+        <StatCard label="Lessons Used"      value={data.lessons_used}         Icon={BookOpen}      colorClass="bg-indigo-500" />
         <StatCard
           label="Answer Quality"
           value={data.total_ai_answers > 0
@@ -68,6 +69,7 @@ export default function AnalyticsPage() {
             <Legend />
             <Bar dataKey="total_questions" name="Questions" fill="#3b82f6" radius={[4,4,0,0]} />
             <Bar dataKey="ai_answered"     name="AI Answered" fill="#8b5cf6" radius={[4,4,0,0]} />
+            <Bar dataKey="owner_answered"  name="Owner Answered" fill="#6366f1" radius={[4,4,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

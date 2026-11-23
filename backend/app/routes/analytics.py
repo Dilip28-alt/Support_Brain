@@ -29,6 +29,8 @@ async def get_summary(
     summary_sql = text("""
         SELECT
             (SELECT COUNT(*) FROM messages WHERE business_id = :bid AND role = 'assistant') AS total_ai,
+            (SELECT COUNT(*) FROM messages WHERE business_id = :bid AND role = 'owner') AS total_owner,
+            (SELECT COUNT(*) FROM pending_questions WHERE business_id = :bid AND status = 'resolved' AND owner_answer IS NOT NULL) AS total_owner_pq,
             (SELECT COUNT(*) FROM messages WHERE business_id = :bid AND role = 'user') AS total_q,
             (SELECT COUNT(*) FROM answer_feedback WHERE business_id = :bid AND feedback_type = 'good') AS good,
             (SELECT COUNT(*) FROM answer_feedback WHERE business_id = :bid AND feedback_type = 'bad') AS bad,
@@ -40,6 +42,7 @@ async def get_summary(
     row = res.fetchone()
 
     total_ai = row.total_ai or 0
+    total_owner = max(row.total_owner or 0, row.total_owner_pq or 0)
     total_q = row.total_q or 0
     good = row.good or 0
     bad = row.bad or 0
@@ -53,6 +56,7 @@ async def get_summary(
     return AnalyticsSummary(
         total_questions=total_q,
         total_ai_answers=total_ai,
+        total_owner_answers=total_owner,
         good_answers=good,
         bad_answers=bad,
         pending_questions=pending,
@@ -72,7 +76,8 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
         SELECT 
             date_trunc('week', created_at) AS wk,
             SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) AS total_q,
-            SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END) AS ai_ans
+            SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END) AS ai_ans,
+            SUM(CASE WHEN role = 'owner' THEN 1 ELSE 0 END) AS owner_ans
         FROM messages
         WHERE business_id = :bid AND created_at >= :start
         GROUP BY 1
@@ -126,7 +131,7 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
                 m[k] = {key: getattr(r, key, 0) or 0 for key in keys}
         return m
 
-    msg_map = to_map(msg_rows, "total_q", "ai_ans")
+    msg_map = to_map(msg_rows, "total_q", "ai_ans", "owner_ans")
     fb_map = to_map(fb_rows, "good", "bad")
     pq_map = to_map(pq_rows, "pend")
     l_map = to_map(l_rows, "lc")
@@ -143,6 +148,7 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
             week_start=k,
             total_questions=msg_map.get(k, {}).get("total_q", 0),
             ai_answered=msg_map.get(k, {}).get("ai_ans", 0),
+            owner_answered=msg_map.get(k, {}).get("owner_ans", 0),
             good_answers=fb_map.get(k, {}).get("good", 0),
             bad_answers=fb_map.get(k, {}).get("bad", 0),
             pending=pq_map.get(k, {}).get("pend", 0),

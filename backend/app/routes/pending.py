@@ -117,7 +117,7 @@ async def resolve_question(
                 owner_msg = Message(
                     conversation_id=q_conv_id,
                     business_id=current_user.business_id,
-                    role=MessageRole.assistant,
+                    role=MessageRole.owner,
                     content=data.owner_answer,
                 )
                 db.add(owner_msg)

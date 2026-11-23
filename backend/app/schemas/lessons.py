@@ -70,6 +70,7 @@ class WeeklyStats(BaseModel):
     week_start: str
     total_questions: int
     ai_answered: int
+    owner_answered: int = 0
     good_answers: int
     bad_answers: int
     pending: int
@@ -80,6 +81,7 @@ class WeeklyStats(BaseModel):
 class AnalyticsSummary(BaseModel):
     total_questions: int
     total_ai_answers: int
+    total_owner_answers: int = 0
     good_answers: int
     bad_answers: int
     pending_questions: int
