@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = Field(..., description="PostgreSQL connection string with pgvector")
 
-    # Gmail OAuth (Optional on initial deploy)
+    # Gmail OAuth
     GMAIL_CLIENT_ID: str = Field(default="", description="Google OAuth2 Client ID")
     GMAIL_CLIENT_SECRET: str = Field(default="", description="Google OAuth2 Client Secret")
     GMAIL_REDIRECT_URI: str = Field(default="", description="OAuth2 redirect URI")

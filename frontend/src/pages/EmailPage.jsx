@@ -77,12 +77,21 @@ export default function EmailPage() {
   }, [])
 
   const connectGmail = async () => {
+    const toastId = toast.loading('Connecting to Google OAuth…')
     try {
       const origin = window.location.origin
       const { data } = await api.get(`/email/oauth/url?origin=${encodeURIComponent(origin)}`)
-      window.location.href = data.url
+      toast.dismiss(toastId)
+      if (data?.url) {
+        window.location.href = data.url
+      } else {
+        toast.error('No authorization URL returned by server')
+      }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to start Gmail OAuth')
+      toast.dismiss(toastId)
+      console.error('Gmail OAuth start error:', err)
+      const detail = err.response?.data?.detail || err.message || 'Failed to start Gmail OAuth'
+      toast.error(detail, { duration: 6000 })
     }
   }
 

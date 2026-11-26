@@ -43,10 +43,19 @@ async def get_oauth_url(
     current_user: User = Depends(get_current_active_user),
 ):
     """Returns the Gmail OAuth authorization URL."""
-    frontend_base = origin or settings.effective_frontend_url
-    state = f"{current_user.business_id}|{frontend_base}"
-    url = get_authorization_url(state=state)
-    return {"url": url}
+    if not settings.GMAIL_CLIENT_ID or not settings.GMAIL_CLIENT_SECRET:
+        raise HTTPException(
+            400,
+            "Gmail OAuth is not configured on the server (missing GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET). Please add them to your Render environment variables, or click 'Connect SMTP/IMAP' to connect directly."
+        )
+    try:
+        frontend_base = origin or settings.effective_frontend_url
+        state = f"{current_user.business_id}|{frontend_base}"
+        url = get_authorization_url(state=state)
+        return {"url": url}
+    except Exception as e:
+        logger.error(f"Error generating OAuth URL: {e}", exc_info=True)
+        raise HTTPException(500, f"Gmail OAuth initialization failed: {str(e)}")
 
 
 @router.get("/oauth/callback")
