@@ -39,10 +39,12 @@ settings = get_settings()
 
 @router.get("/oauth/url")
 async def get_oauth_url(
+    origin: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
 ):
     """Returns the Gmail OAuth authorization URL."""
-    state = str(current_user.business_id)
+    frontend_base = origin or settings.effective_frontend_url
+    state = f"{current_user.business_id}|{frontend_base}"
     url = get_authorization_url(state=state)
     return {"url": url}
 
@@ -54,19 +56,38 @@ async def oauth_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """Handle Gmail OAuth callback. Called by Google after user consent."""
+    from fastapi.responses import RedirectResponse
+    import urllib.parse
+    import os
+
+    if "|" in state:
+        biz_part, frontend_base = state.split("|", 1)
+    else:
+        biz_part = state
+        frontend_base = settings.effective_frontend_url
+
+    # Fallback to Vercel production frontend if on Render
+    if "localhost" in frontend_base and (os.getenv("RENDER") or "onrender.com" in settings.effective_backend_url):
+        frontend_base = "https://support-brain-2ebv.vercel.app"
+
     try:
-        business_id = uuid.UUID(state)
+        business_id = uuid.UUID(biz_part)
     except ValueError:
-        raise HTTPException(400, "Invalid state parameter")
+        return RedirectResponse(
+            url=f"{frontend_base.rstrip('/')}/dashboard/email?error={urllib.parse.quote('Invalid state parameter in OAuth response')}"
+        )
 
     try:
         account = await handle_oauth_callback(db, business_id, code)
-        from fastapi.responses import RedirectResponse
         return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/dashboard/email?connected=true"
+            url=f"{frontend_base.rstrip('/')}/dashboard/email?connected=true"
         )
     except Exception as e:
-        raise HTTPException(500, f"OAuth callback failed: {str(e)}")
+        logger.error(f"OAuth callback failed: {e}", exc_info=True)
+        err_msg = urllib.parse.quote(str(e))
+        return RedirectResponse(
+            url=f"{frontend_base.rstrip('/')}/dashboard/email?error={err_msg}"
+        )
 
 
 @router.post("/smtp-imap/connect", response_model=EmailAccountResponse)

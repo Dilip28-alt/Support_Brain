@@ -37,13 +37,18 @@ GMAIL_SCOPES = [
 ]
 
 
-def get_oauth_flow() -> Flow:
+def get_oauth_flow(redirect_uri: Optional[str] = None) -> Flow:
     """Build a Google OAuth2 flow."""
+    effective_redirect = redirect_uri or settings.effective_gmail_redirect_uri
     client_config = {
         "web": {
             "client_id": settings.GMAIL_CLIENT_ID,
             "client_secret": settings.GMAIL_CLIENT_SECRET,
-            "redirect_uris": [settings.GMAIL_REDIRECT_URI],
+            "redirect_uris": [
+                effective_redirect,
+                "https://support-brain-api.onrender.com/api/email/oauth/callback",
+                "http://localhost:8000/api/email/oauth/callback",
+            ],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
@@ -51,14 +56,14 @@ def get_oauth_flow() -> Flow:
     flow = Flow.from_client_config(
         client_config,
         scopes=GMAIL_SCOPES,
-        redirect_uri=settings.GMAIL_REDIRECT_URI,
+        redirect_uri=effective_redirect,
     )
     return flow
 
 
-def get_authorization_url(state: str) -> str:
+def get_authorization_url(state: str, redirect_uri: Optional[str] = None) -> str:
     """Generate the Gmail OAuth authorization URL."""
-    flow = get_oauth_flow()
+    flow = get_oauth_flow(redirect_uri=redirect_uri)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -72,9 +77,10 @@ async def handle_oauth_callback(
     db: AsyncSession,
     business_id: UUID,
     code: str,
+    redirect_uri: Optional[str] = None,
 ) -> EmailAccount:
     """Exchange OAuth code for tokens and store encrypted tokens."""
-    flow = get_oauth_flow()
+    flow = get_oauth_flow(redirect_uri=redirect_uri)
     flow.fetch_token(code=code)
     creds = flow.credentials
 

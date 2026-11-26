@@ -69,6 +69,34 @@ class Settings(BaseSettings):
     # Rate limiting (public chat)
     CHAT_RATE_LIMIT: str = "30/minute"
 
+    @property
+    def effective_backend_url(self) -> str:
+        render_url = os.getenv("RENDER_EXTERNAL_URL")
+        if render_url:
+            return render_url.rstrip("/")
+        if self.BACKEND_URL and "localhost" not in self.BACKEND_URL:
+            return self.BACKEND_URL.rstrip("/")
+        if os.getenv("RENDER") == "true":
+            return "https://support-brain-api.onrender.com"
+        return self.BACKEND_URL.rstrip("/")
+
+    @property
+    def effective_frontend_url(self) -> str:
+        if self.FRONTEND_URL and "localhost" not in self.FRONTEND_URL:
+            return self.FRONTEND_URL.rstrip("/")
+        if os.getenv("RENDER") == "true" or os.getenv("RENDER_EXTERNAL_URL"):
+            return "https://support-brain-2ebv.vercel.app"
+        return self.FRONTEND_URL.rstrip("/")
+
+    @property
+    def effective_gmail_redirect_uri(self) -> str:
+        if self.GMAIL_REDIRECT_URI and "localhost" not in self.GMAIL_REDIRECT_URI:
+            return self.GMAIL_REDIRECT_URI
+        if os.getenv("RENDER") == "true" or os.getenv("RENDER_EXTERNAL_URL"):
+            backend = os.getenv("RENDER_EXTERNAL_URL", "https://support-brain-api.onrender.com").rstrip("/")
+            return f"{backend}/api/email/oauth/callback"
+        return self.GMAIL_REDIRECT_URI or f"{self.BACKEND_URL.rstrip('/')}/api/email/oauth/callback"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

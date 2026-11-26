@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../services/api.js'
 import toast from 'react-hot-toast'
 import {
@@ -49,6 +50,8 @@ export default function EmailPage() {
   })
   const [composing, setComposing] = useState(false)
 
+  const [searchParams, setSearchParams] = useSearchParams()
+
   const loadData = () => {
     Promise.all([
       api.get('/email/accounts'),
@@ -64,11 +67,19 @@ export default function EmailPage() {
 
   useEffect(() => {
     loadData()
+    if (searchParams.get('connected') === 'true') {
+      toast.success('Gmail connected successfully!')
+      setSearchParams({})
+    } else if (searchParams.get('error')) {
+      toast.error(`OAuth error: ${searchParams.get('error')}`, { duration: 8000 })
+      setSearchParams({})
+    }
   }, [])
 
   const connectGmail = async () => {
     try {
-      const { data } = await api.get('/email/oauth/url')
+      const origin = window.location.origin
+      const { data } = await api.get(`/email/oauth/url?origin=${encodeURIComponent(origin)}`)
       window.location.href = data.url
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to start Gmail OAuth')
