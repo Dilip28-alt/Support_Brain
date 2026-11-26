@@ -314,11 +314,29 @@ async def compose_email(
                 body=data.body,
             )
         except Exception as e:
+            logger.error(f"SMTP send failed: {e}", exc_info=True)
+            now = datetime.now(timezone.utc)
+            failed_msg = EmailMessage(
+                business_id=current_user.business_id,
+                email_account_id=account.id,
+                gmail_message_id=f"out-{uuid.uuid4().hex[:12]}",
+                gmail_thread_id=f"thread-{uuid.uuid4().hex[:12]}",
+                direction=EmailMessageDirection.outgoing,
+                subject=data.subject,
+                sender=account.email_address,
+                recipient=data.recipient,
+                body_text=data.body,
+                status=EmailMessageStatus.failed,
+                received_at=now,
+            )
+            db.add(failed_msg)
+            await db.commit()
             raise HTTPException(500, f"SMTP send failed: {str(e)}")
     else:
         from app.email.gmail_service import _build_gmail_service
         from email.mime.text import MIMEText
         import base64
+        sent_resp = None
         try:
             service, _ = _build_gmail_service(account)
             mime = MIMEText(data.body)
@@ -326,12 +344,29 @@ async def compose_email(
             mime["from"] = account.email_address
             mime["subject"] = data.subject
             raw = base64.urlsafe_b64encode(mime.as_bytes()).decode("utf-8")
-            service.users().messages().send(userId="me", body={"raw": raw}).execute()
+            sent_resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
         except Exception as e:
-            logger.warning(f"Gmail send error: {e}")
+            logger.error(f"Gmail send error: {e}", exc_info=True)
+            now = datetime.now(timezone.utc)
+            failed_msg = EmailMessage(
+                business_id=current_user.business_id,
+                email_account_id=account.id,
+                gmail_message_id=f"out-{uuid.uuid4().hex[:12]}",
+                gmail_thread_id=f"thread-{uuid.uuid4().hex[:12]}",
+                direction=EmailMessageDirection.outgoing,
+                subject=data.subject,
+                sender=account.email_address,
+                recipient=data.recipient,
+                body_text=data.body,
+                status=EmailMessageStatus.failed,
+                received_at=now,
+            )
+            db.add(failed_msg)
+            await db.commit()
+            raise HTTPException(500, f"Gmail delivery failed: {str(e)}")
 
     now = datetime.now(timezone.utc)
-    thread_id = f"thread-{uuid.uuid4().hex[:12]}"
+    thread_id = (sent_resp.get("threadId") if sent_resp and isinstance(sent_resp, dict) else None) or f"thread-{uuid.uuid4().hex[:12]}"
     msg = EmailMessage(
         business_id=current_user.business_id,
         email_account_id=account.id,

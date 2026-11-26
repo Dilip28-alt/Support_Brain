@@ -437,3 +437,36 @@ async def test_email_safety_full_suite():
             assert "visitor@publicweb.com" in pub_chk.sender
             assert pub_chk.draft_reply is not None
             assert len(pub_chk.draft_reply) > 0
+
+        # ─────────────────────────────────────────────────────────────
+        # TEST 10: Compose Email Failure Handling
+        # If Gmail fails during Compose, return error 500 and save status as 'failed'
+        # ─────────────────────────────────────────────────────────────
+        mock_compose_fail = mock.MagicMock()
+        mock_compose_fail.users().messages().send().execute.side_effect = Exception("Gmail SMTP Error 503")
+
+        with mock.patch("app.email.gmail_service._build_gmail_service", return_value=(mock_compose_fail, None)):
+            fail_comp_res = await client.post("/api/email/compose", json={
+                "recipient": "failed.customer@example.com",
+                "subject": "Urgent Security Notice",
+                "body": "Your account has a notice.",
+            }, headers=headers_a)
+
+            assert fail_comp_res.status_code == 500
+            assert "Gmail delivery failed" in fail_comp_res.json()["detail"]
+
+        # Verify that the failed attempt was saved in database as 'failed'
+        async with AsyncSessionLocal() as session:
+            from sqlalchemy import select
+            fail_chk_res = await session.execute(
+                select(EmailMessage).where(
+                    EmailMessage.business_id == biz_a_id,
+                    EmailMessage.recipient == "failed.customer@example.com",
+                )
+            )
+            failed_saved = fail_chk_res.scalars().first()
+            assert failed_saved is not None
+            assert failed_saved.status == EmailMessageStatus.failed
+            assert failed_saved.direction == EmailMessageDirection.outgoing
+            assert failed_saved.subject == "Urgent Security Notice"
+

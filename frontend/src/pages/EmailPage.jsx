@@ -187,6 +187,7 @@ export default function EmailPage() {
       loadData()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to send composed email')
+      loadData()
     } finally {
       setComposing(false)
     }
@@ -195,6 +196,7 @@ export default function EmailPage() {
   const filteredEmails = emails.filter((em) => {
     if (filter === 'draft') return em.status === 'draft' || em.status === 'pending'
     if (filter === 'sent') return em.status === 'sent'
+    if (filter === 'failed') return em.status === 'failed'
     return true
   })
 
@@ -346,6 +348,10 @@ export default function EmailPage() {
               id: 'sent',
               label: `Sent (${emails.filter((e) => e.status === 'sent').length})`,
             },
+            {
+              id: 'failed',
+              label: `Failed (${emails.filter((e) => e.status === 'failed').length})`,
+            },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -412,7 +418,9 @@ export default function EmailPage() {
               <div
                 key={email.id}
                 className={`card border-l-4 ${
-                  isOutgoing
+                  email.status === 'failed'
+                    ? 'border-l-rose-500 bg-rose-50/20'
+                    : isOutgoing
                     ? 'border-l-green-500 bg-green-50/20'
                     : email.status === 'sent'
                     ? 'border-l-blue-400'
@@ -425,7 +433,9 @@ export default function EmailPage() {
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-xs px-2 py-0.5 rounded font-medium flex items-center gap-1 ${
-                          isOutgoing
+                          email.status === 'failed'
+                            ? 'bg-rose-100 text-rose-700'
+                            : isOutgoing
                             ? 'bg-green-100 text-green-700'
                             : 'bg-purple-100 text-purple-700'
                         }`}
@@ -469,6 +479,8 @@ export default function EmailPage() {
                           ? 'badge-green'
                           : email.status === 'draft'
                           ? 'badge-blue'
+                          : email.status === 'failed'
+                          ? 'bg-rose-100 text-rose-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-rose-200'
                           : 'badge-yellow'
                       }
                     >
