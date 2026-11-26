@@ -266,9 +266,37 @@ async def send_email(
             reply_body=data.reply_body,
         )
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        err_msg = str(e)
+        if "reconnect" in err_msg.lower() or "expired" in err_msg.lower():
+            try:
+                acc_res = await db.execute(
+                    select(EmailAccount).where(EmailAccount.business_id == current_user.business_id)
+                )
+                acc = acc_res.scalars().first()
+                if acc:
+                    acc.status = EmailAccountStatus.error
+                    await db.commit()
+            except Exception:
+                pass
+        raise HTTPException(400, err_msg)
     except Exception as e:
         logger.error(f"Error in send_email: {e}", exc_info=True)
+        err_str = str(e).lower()
+        if "invalid_grant" in err_str or "token has been expired" in err_str or "refresherror" in err_str:
+            try:
+                acc_res = await db.execute(
+                    select(EmailAccount).where(EmailAccount.business_id == current_user.business_id)
+                )
+                acc = acc_res.scalars().first()
+                if acc:
+                    acc.status = EmailAccountStatus.error
+                    await db.commit()
+            except Exception:
+                pass
+            raise HTTPException(
+                400,
+                "Gmail authorization has expired or was revoked by Google. Please click 'Connect Gmail' above to reconnect your account."
+            )
         raise HTTPException(500, f"Email delivery error: {str(e)}")
 
 

@@ -137,7 +137,13 @@ def _build_gmail_service(account: EmailAccount):
     )
 
     if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except Exception as e:
+            err_str = str(e).lower()
+            if "invalid_grant" in err_str or "token has been expired" in err_str or "refresherror" in err_str:
+                raise ValueError("Gmail authorization has expired or was revoked by Google. Please click 'Connect Gmail' in the dashboard to reconnect your account.")
+            raise
 
     return build("gmail", "v1", credentials=creds), creds
 
@@ -331,6 +337,11 @@ async def _send_reply(service, email_msg: EmailMessage, reply_body: str, from_em
             sent_resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
         else:
             raise
+    except Exception as e:
+        err_str = str(e).lower()
+        if "invalid_grant" in err_str or "token has been expired" in err_str or "refresherror" in err_str:
+            raise ValueError("Gmail authorization has expired or was revoked by Google. Please click 'Connect Gmail' in the dashboard to reconnect your account.")
+        raise
 
     # If Gmail assigned a real threadId and messageId, update email_msg
     if sent_resp and sent_resp.get("threadId"):

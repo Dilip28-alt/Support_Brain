@@ -142,7 +142,13 @@ export default function EmailPage() {
       toast.success('Reply sent in thread!')
       loadData()
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to send reply')
+      const detail = err.response?.data?.detail || 'Failed to send reply'
+      if (detail.includes('expired') || detail.includes('reconnect') || detail.includes('invalid_grant')) {
+        toast.error('⚠️ Gmail connection expired. Please click "Connect Gmail" above to reconnect.', { duration: 6000 })
+        loadData()
+      } else {
+        toast.error(detail)
+      }
     } finally {
       setSending(null)
     }
@@ -252,6 +258,27 @@ export default function EmailPage() {
         </div>
       </div>
 
+      {/* Reconnect Required Banner */}
+      {accounts.some((a) => a.status === 'error') && (
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 flex items-start justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+            <div>
+              <h4 className="font-semibold text-sm">Gmail Authorization Expired</h4>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Google requires periodic re-authorization for test applications. Please click <strong>Reconnect Gmail</strong> to refresh permissions and restore full email sending capabilities.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={connectGmail}
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors shadow-sm"
+          >
+            <Mail size={13} /> Reconnect Gmail Now
+          </button>
+        </div>
+      )}
+
       {/* Connected Inboxes Section */}
       {accounts.length > 0 && (
         <div className="card mb-6">
@@ -277,9 +304,14 @@ export default function EmailPage() {
                           acc.status === 'connected' ? 'badge-green' : 'badge-red'
                         }
                       >
-                        {acc.status}
+                        {acc.status === 'error' ? 'RECONNECT NEEDED' : acc.status}
                       </span>
                     </div>
+                    {acc.status === 'error' && (
+                      <p className="text-xs text-rose-600 font-medium mt-1 flex items-center gap-1">
+                        <AlertCircle size={12} /> Google OAuth token expired. Please click Reconnect Gmail.
+                      </p>
+                    )}
                     <p className="text-xs text-gray-500 mt-0.5">
                       Mode:{' '}
                       <strong className="text-gray-700 uppercase">
@@ -295,6 +327,18 @@ export default function EmailPage() {
 
                 {/* Mode Selector Toggle */}
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={connectGmail}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors ${
+                      acc.status === 'error'
+                        ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm animate-pulse'
+                        : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                    }`}
+                    title="Reconnect Gmail to grant fresh Google OAuth token"
+                  >
+                    <Mail size={13} /> Reconnect Gmail
+                  </button>
+
                   <div className="flex bg-white rounded-lg p-1 border border-gray-200">
                     <button
                       onClick={() => updateMode(acc, 'review')}
