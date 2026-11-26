@@ -105,3 +105,19 @@ class AskAgainResponse(BaseModel):
     lesson_used: Optional[UUID]
     knowledge_source_used: Optional[str]
     lesson_retrieved: bool
+
+
+class ChatEmailTranscriptRequest(BaseModel):
+    business_slug: Optional[str] = None
+    business_token: Optional[str] = None
+    recipient_email: str = Field(..., min_length=3, max_length=255)
+    customer_name: Optional[str] = "Customer"
+    conversation_id: Optional[UUID] = None
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    full_transcript: Optional[str] = None
+
+
+class ChatEmailTranscriptResponse(BaseModel):
+    status: str
+    message: str

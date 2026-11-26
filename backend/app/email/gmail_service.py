@@ -305,9 +305,11 @@ async def _send_reply(service, email_msg: EmailMessage, reply_body: str, from_em
     msg["from"] = from_email
     subject = email_msg.subject or ""
     msg["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
-    if email_msg.gmail_message_id:
-        msg["In-Reply-To"] = email_msg.gmail_message_id
-        msg["References"] = email_msg.gmail_message_id
+    mid = email_msg.gmail_message_id
+    is_synthetic_mid = not mid or mid.startswith("pub-") or mid.startswith("sim-")
+    if not is_synthetic_mid:
+        msg["In-Reply-To"] = mid
+        msg["References"] = mid
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
 
@@ -400,7 +402,9 @@ async def send_email_reply(
     # 6. Uncertain state reconciliation with Gmail:
     # If a prior send attempt succeeded at Gmail but crashed before DB commit,
     # reconcile DB status before blindly attempting another send.
-    if not is_smtp_imap and email_msg.gmail_thread_id:
+    tid = email_msg.gmail_thread_id
+    is_synthetic_tid = not tid or tid.startswith("thread-") or tid.startswith("sim-") or not all(c in "0123456789abcdefABCDEF" for c in tid)
+    if not is_smtp_imap and not is_synthetic_tid:
         try:
             service, _ = _build_gmail_service(account)
             thread = service.users().threads().get(

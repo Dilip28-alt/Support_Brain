@@ -16,7 +16,8 @@ from app.models.models import (
 from app.schemas.chat import (
     ChatRequest, ChatResponse, ConversationResponse, MessageResponse,
     FeedbackCreate, AskAgainRequest, AskAgainResponse, PublicBusinessInfo,
-    PublicEmailInquiryRequest, PublicEmailInquiryResponse
+    PublicEmailInquiryRequest, PublicEmailInquiryResponse,
+    ChatEmailTranscriptRequest, ChatEmailTranscriptResponse
 )
 from app.services.chat_service import handle_chat, handle_ask_again, save_feedback
 from app.utils.auth import get_current_active_user
@@ -205,6 +206,137 @@ async def public_email_inquiry(
         message=f"Thank you, {inquiry.sender_name or 'customer'}! Your email inquiry has been received by {business.name}. We will review it and reply directly to {inquiry.sender_email}.",
         email_id=email_msg.id,
         thread_id=thread_id,
+    )
+
+
+@router.post("/api/chat/public/email-transcript", response_model=ChatEmailTranscriptResponse)
+async def public_email_transcript(
+    data: ChatEmailTranscriptRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Send chat answer or full transcript to customer's email inbox.
+    Uses the business's connected Gmail or SMTP inbox and records the outgoing email in history.
+    """
+    # 1. Resolve business
+    business = None
+    if data.business_token:
+        res = await db.execute(
+            select(Business).where(Business.widget_token == data.business_token.strip(), Business.is_active == True)
+        )
+        business = res.scalar_one_or_none()
+    elif data.business_slug:
+        res = await db.execute(
+            select(Business).where(Business.slug.ilike(data.business_slug.strip()), Business.is_active == True)
+        )
+        business = res.scalar_one_or_none()
+
+    if not business:
+        raise HTTPException(404, "Business not found or inactive")
+
+    # 2. Get connected inbox
+    acc_res = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.business_id == business.id,
+            EmailAccount.status == EmailAccountStatus.connected,
+        )
+    )
+    account = acc_res.scalars().first()
+    if not account:
+        raise HTTPException(400, f"No email account connected for {business.name}. Please connect an inbox in settings.")
+
+    # 3. Format subject and body
+    recipient = data.recipient_email.strip()
+    customer_name = data.customer_name.strip() if data.customer_name else "Customer"
+
+    if data.question and data.answer:
+        subject = f"Support Brain Answer: {data.question[:50]}"
+        content_section = f"Question:\n{data.question}\n\nAI Support Answer:\n{data.answer}"
+    elif data.full_transcript:
+        subject = f"{business.name} Support — Chat Conversation Transcript"
+        content_section = data.full_transcript
+    else:
+        subject = f"{business.name} Support Conversation"
+        content_section = data.answer or "Here is your support conversation."
+
+    email_body = (
+        f"Hello {customer_name},\n\n"
+        f"Thank you for reaching out to {business.name} support! Here is a copy of your chat response:\n\n"
+        f"--------------------------------------------------\n"
+        f"{content_section}\n"
+        f"--------------------------------------------------\n\n"
+        f"If you have further questions or require additional assistance, feel free to reply directly to this email.\n\n"
+        f"Best regards,\n"
+        f"{business.name} Support Team\n"
+        f"Powered by Support Brain"
+    )
+
+    # 4. Detect provider & send email
+    is_smtp_imap = False
+    if account.encrypted_access_token:
+        from app.utils.encryption import decrypt_token
+        import json
+        try:
+            raw_creds = json.loads(decrypt_token(account.encrypted_access_token))
+            if raw_creds.get("provider") == "smtp_imap":
+                is_smtp_imap = True
+        except Exception:
+            pass
+
+    gmail_thread_id = None
+    if is_smtp_imap:
+        from app.email.smtp_imap_service import send_smtp_message
+        try:
+            send_smtp_message(
+                account=account,
+                to_email=recipient,
+                subject=subject,
+                body=email_body,
+            )
+        except Exception as e:
+            raise HTTPException(500, f"Failed to send email via SMTP: {str(e)}")
+    else:
+        # Gmail API
+        import base64
+        from email.mime.text import MIMEText
+        from app.email.gmail_service import _build_gmail_service
+
+        msg = MIMEText(email_body)
+        msg["to"] = recipient
+        msg["from"] = account.email_address
+        msg["subject"] = subject
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        try:
+            service, _ = _build_gmail_service(account)
+            sent_resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+            if sent_resp and sent_resp.get("threadId"):
+                gmail_thread_id = sent_resp["threadId"]
+        except Exception as e:
+            raise HTTPException(500, f"Failed to send email via Gmail: {str(e)}")
+
+    # 5. Record outgoing email in email_messages
+    now = datetime.now(timezone.utc)
+    outgoing_msg = EmailMessage(
+        business_id=business.id,
+        email_account_id=account.id,
+        gmail_message_id=f"out-{uuid.uuid4().hex[:12]}",
+        gmail_thread_id=gmail_thread_id or f"thread-{uuid.uuid4().hex[:12]}",
+        direction=EmailMessageDirection.outgoing,
+        subject=subject,
+        sender=account.email_address,
+        recipient=recipient,
+        body_text=email_body,
+        status=EmailMessageStatus.sent,
+        sent_at=now,
+        received_at=now,
+    )
+    db.add(outgoing_msg)
+    await db.commit()
+
+    return ChatEmailTranscriptResponse(
+        status="success",
+        message=f"Chat response sent successfully to {recipient}!"
     )
 
 

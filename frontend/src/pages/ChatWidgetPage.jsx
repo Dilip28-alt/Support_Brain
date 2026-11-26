@@ -17,7 +17,8 @@ import {
   CheckCircle2,
   HelpCircle,
   User,
-  ArrowRight
+  ArrowRight,
+  X
 } from 'lucide-react'
 
 const publicApi = axios.create({
@@ -60,6 +61,15 @@ export default function ChatWidgetPage() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [emailSuccess, setEmailSuccess] = useState(null)
   const [emailError, setEmailError] = useState(null)
+
+  // Transcript / Answer Email modal state
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [selectedMessageForEmail, setSelectedMessageForEmail] = useState(null)
+  const [emailModalTarget, setEmailModalTarget] = useState('')
+  const [sendingTranscript, setSendingTranscript] = useState(false)
+  const [transcriptSuccess, setTranscriptSuccess] = useState(null)
+  const [transcriptError, setTranscriptError] = useState(null)
+  const [autoEmailAnswers, setAutoEmailAnswers] = useState(false)
 
   const bottomRef = useRef(null)
 
@@ -166,6 +176,63 @@ export default function ChatWidgetPage() {
     setActiveTab('email')
   }
 
+  const handleOpenEmailModal = (msg = null) => {
+    setSelectedMessageForEmail(msg)
+    setEmailModalTarget(customerEmail || '')
+    setTranscriptSuccess(null)
+    setTranscriptError(null)
+    setShowEmailModal(true)
+  }
+
+  const handleSendTranscript = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    if (!emailModalTarget.trim()) {
+      setTranscriptError('Please enter your email address.')
+      return
+    }
+    setSendingTranscript(true)
+    setTranscriptError(null)
+    setTranscriptSuccess(null)
+
+    try {
+      let payload = {
+        recipient_email: emailModalTarget.trim(),
+        customer_name: customerName.trim() || 'Customer',
+        conversation_id: conversationId,
+        business_token: effectiveToken || null,
+        business_slug: effectiveSlug || null,
+      }
+
+      if (selectedMessageForEmail) {
+        const msgIdx = messages.findIndex((m) => m.id === selectedMessageForEmail.id)
+        const prevUserMsg = msgIdx > 0 ? messages.slice(0, msgIdx).filter((m) => m.role === 'user').pop() : null
+        payload.question = prevUserMsg ? prevUserMsg.content : 'Inquiry'
+        payload.answer = selectedMessageForEmail.content
+      } else {
+        const transcriptText = messages
+          .filter((m) => m.id !== 'welcome')
+          .map((m) => `[${m.role === 'user' ? (customerName || 'Customer') : 'Support Brain AI'} - ${m.timestamp}]:\n${m.content}`)
+          .join('\n\n')
+        payload.full_transcript = transcriptText || 'Welcome to Support Brain!'
+      }
+
+      const { data } = await publicApi.post('/chat/public/email-transcript', payload)
+      setTranscriptSuccess(data.message || `Sent successfully to ${emailModalTarget}!`)
+      if (!customerEmail) {
+        setCustomerEmail(emailModalTarget.trim())
+      }
+      setTimeout(() => {
+        setShowEmailModal(false)
+        setTranscriptSuccess(null)
+      }, 2500)
+    } catch (err) {
+      console.error('Email transcript error:', err)
+      setTranscriptError(err.response?.data?.detail || 'Failed to email chat. Please try again.')
+    } finally {
+      setSendingTranscript(false)
+    }
+  }
+
   const send = async () => {
     if (!input.trim() || loading) return
     const question = input.trim()
@@ -210,6 +277,19 @@ export default function ChatWidgetPage() {
           confidence_score: data.confidence_score,
         },
       ])
+
+      // Auto-email answer if user selected notifications to email
+      if (autoEmailAnswers && customerEmail && customerEmail.trim()) {
+        publicApi.post('/chat/public/email-transcript', {
+          recipient_email: customerEmail.trim(),
+          customer_name: customerName.trim() || 'Customer',
+          conversation_id: data.conversation_id,
+          question,
+          answer: data.answer,
+          business_token: effectiveToken || null,
+          business_slug: effectiveSlug || null,
+        }).catch((err) => console.warn('Auto-email answer note:', err))
+      }
     } catch (err) {
       console.error('Chat error:', err)
       const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout')
@@ -277,14 +357,24 @@ export default function ChatWidgetPage() {
 
         <div className="flex items-center gap-1">
           {activeTab === 'chat' && (
-            <button
-              onClick={handleClearChat}
-              title="Clear Conversation"
-              className="text-blue-100 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
-              aria-label="Clear chat"
-            >
-              <RotateCcw size={17} />
-            </button>
+            <>
+              <button
+                onClick={() => handleOpenEmailModal(null)}
+                title="Email conversation transcript"
+                className="text-blue-100 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
+                aria-label="Email conversation"
+              >
+                <Mail size={17} />
+              </button>
+              <button
+                onClick={handleClearChat}
+                title="Clear Conversation"
+                className="text-blue-100 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
+                aria-label="Clear chat"
+              >
+                <RotateCcw size={17} />
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -404,10 +494,22 @@ export default function ChatWidgetPage() {
                     )}
                   </div>
 
-                  {/* Timestamp */}
-                  <div className="flex items-center gap-1 mt-1 px-1 text-[11px] text-slate-400">
-                    <Clock size={10} />
-                    <span>{msg.timestamp}</span>
+                  {/* Timestamp and Email Action */}
+                  <div className="flex items-center justify-between w-full mt-1 px-1 text-[11px] text-slate-400">
+                    <div className="flex items-center gap-1">
+                      <Clock size={10} />
+                      <span>{msg.timestamp}</span>
+                    </div>
+                    {msg.role === 'assistant' && msg.id !== 'welcome' && (
+                      <button
+                        onClick={() => handleOpenEmailModal(msg)}
+                        className="flex items-center gap-1 text-slate-400 hover:text-blue-600 transition-colors ml-auto"
+                        title="Email this answer"
+                      >
+                        <Mail size={11} />
+                        <span>Email answer</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -463,6 +565,17 @@ export default function ChatWidgetPage() {
                   onChange={(e) => setCustomerEmail(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+              </div>
+              <div className="col-span-2 mt-1">
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoEmailAnswers}
+                    onChange={(e) => setAutoEmailAnswers(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Automatically email AI answers to my inbox</span>
+                </label>
               </div>
             </div>
           )}
@@ -648,6 +761,93 @@ export default function ChatWidgetPage() {
           <p className="text-[11px] text-slate-400 text-center mt-4">
             Inquiries are processed by Support Brain RAG and routed to {business.name}'s support team.
           </p>
+        </div>
+      )}
+
+      {/* Email Transcript / Answer Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 border border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <Mail size={16} />
+                </div>
+                <h3 className="font-semibold text-sm text-slate-800">
+                  {selectedMessageForEmail ? 'Email This Answer' : 'Email Chat Transcript'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-3">
+              {selectedMessageForEmail
+                ? 'Send this verified answer and knowledge citations directly to your inbox.'
+                : 'Receive the complete transcript of your support session in your email.'}
+            </p>
+
+            {transcriptSuccess && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2 mb-3">
+                <CheckCircle2 size={15} className="flex-shrink-0" />
+                <span>{transcriptSuccess}</span>
+              </div>
+            )}
+
+            {transcriptError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 mb-3">
+                <AlertCircle size={15} className="flex-shrink-0" />
+                <span>{transcriptError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSendTranscript} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Recipient Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="your.email@example.com"
+                  value={emailModalTarget}
+                  onChange={(e) => setEmailModalTarget(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 focus:bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailModal(false)}
+                  className="px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingTranscript || !emailModalTarget.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                >
+                  {sendingTranscript ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Sending…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send size={13} />
+                      <span>Send to Email</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
