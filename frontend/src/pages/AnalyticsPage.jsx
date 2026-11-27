@@ -41,7 +41,7 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
         <StatCard label="Total Questions"   value={data.total_questions}      Icon={MessageSquare} colorClass="bg-blue-500" />
         <StatCard label="AI Answers"        value={data.total_ai_answers}     Icon={Brain}         colorClass="bg-brand-600" />
-        <StatCard label="Owner answers"     value={data.total_owner_answers}  Icon={UserCheck}     colorClass="bg-indigo-600" />
+        <StatCard label="Owner Answers"     value={data.total_owner_answers}  Icon={UserCheck}     colorClass="bg-indigo-600" />
         <StatCard label="Good Answers"      value={data.good_answers}         Icon={TrendingUp}    colorClass="bg-green-500" />
         <StatCard label="Bad Answers"       value={data.bad_answers}          Icon={TrendingDown}  colorClass="bg-red-500" />
         <StatCard label="Pending Questions" value={data.pending_questions}    Icon={HelpCircle}    colorClass="bg-yellow-500" />

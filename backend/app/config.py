@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     GMAIL_REDIRECT_URI: str = Field(default="", description="OAuth2 redirect URI")
 
     # App Security
-    APP_SECRET_KEY: str = Field(default="support-brain-secret-key-production-default-2024", description="JWT signing secret")
+    APP_SECRET_KEY: str = Field(default="", description="JWT signing secret")
     TOKEN_ENCRYPTION_KEY: str = Field(default="gY7nK4v2x9L1m8P0q3R5t7U9w2Y4a6C8e0G2i4K6m8O=", description="Fernet key for Gmail token encryption")
 
     # URLs
@@ -104,13 +104,13 @@ class Settings(BaseSettings):
         extra = "ignore"
 
     def validate_all(self) -> None:
-        """Called at startup — logs which optional vars use defaults."""
-        critical = ["DATABASE_URL"]
+        """Called at startup — fails safely if critical security environment variables are missing."""
+        critical = ["DATABASE_URL", "APP_SECRET_KEY"]
         for var in critical:
             value = getattr(self, var, None)
-            if not value or value.startswith("your_"):
+            if not value or not str(value).strip() or str(value).startswith("your_"):
                 raise ValueError(
-                    f"❌ Critical environment variable {var} is missing or still a placeholder."
+                    f"❌ Critical environment variable {var} is missing or empty in environment. Server startup aborted for security."
                 )
 
         # Check Gmail credentials gently

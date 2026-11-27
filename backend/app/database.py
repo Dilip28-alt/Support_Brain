@@ -70,4 +70,8 @@ async def init_db():
             """))
         except Exception:
             pass
+        try:
+            await conn.execute(text("ALTER TYPE messagerole ADD VALUE IF NOT EXISTS 'owner';"))
+        except Exception:
+            pass
         logger.info("✅ Database schema verified.")

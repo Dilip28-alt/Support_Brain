@@ -37,10 +37,8 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[settings.CHAT_RAT
 async def lifespan(app: FastAPI):
     """Startup and shutdown events with graceful error recovery."""
     logger.info("🚀 Support Brain starting up…")
-    try:
-        settings.validate_all()
-    except Exception as e:
-        logger.warning(f"⚠️ Config validation note: {e}")
+    # Critical security validation must fail safely during startup if APP_SECRET_KEY is missing or empty
+    settings.validate_all()
     try:
         await init_db()
         logger.info("✅ Database ready. App is live.")

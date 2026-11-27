@@ -29,8 +29,15 @@ async def get_summary(
     summary_sql = text("""
         SELECT
             (SELECT COUNT(*) FROM messages WHERE business_id = :bid AND role = 'assistant') AS total_ai,
-            (SELECT COUNT(*) FROM messages WHERE business_id = :bid AND role = 'owner') AS total_owner,
-            (SELECT COUNT(*) FROM pending_questions WHERE business_id = :bid AND status = 'resolved' AND owner_answer IS NOT NULL) AS total_owner_pq,
+            (
+                (SELECT COUNT(*) FROM pending_questions WHERE business_id = :bid AND status = 'resolved' AND owner_answer IS NOT NULL)
+                +
+                (SELECT COUNT(*) FROM messages m WHERE m.business_id = :bid AND m.role = 'owner' 
+                 AND NOT EXISTS (
+                     SELECT 1 FROM pending_questions pq 
+                     WHERE pq.business_id = :bid AND pq.conversation_id = m.conversation_id AND pq.status = 'resolved'
+                 ))
+            ) AS total_owner,
             (SELECT COUNT(*) FROM messages WHERE business_id = :bid AND role = 'user') AS total_q,
             (SELECT COUNT(*) FROM answer_feedback WHERE business_id = :bid AND feedback_type = 'good') AS good,
             (SELECT COUNT(*) FROM answer_feedback WHERE business_id = :bid AND feedback_type = 'bad') AS bad,
@@ -42,7 +49,7 @@ async def get_summary(
     row = res.fetchone()
 
     total_ai = row.total_ai or 0
-    total_owner = max(row.total_owner or 0, row.total_owner_pq or 0)
+    total_owner = row.total_owner or 0
     total_q = row.total_q or 0
     good = row.good or 0
     bad = row.bad or 0
@@ -99,6 +106,14 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
         WHERE business_id = :bid AND created_at >= :start
         GROUP BY 1
     """)
+    pq_res_sql = text("""
+        SELECT 
+            date_trunc('week', resolved_at) AS wk,
+            COUNT(*) AS owner_res
+        FROM pending_questions
+        WHERE business_id = :bid AND status = 'resolved' AND owner_answer IS NOT NULL AND resolved_at >= :start
+        GROUP BY 1
+    """)
     l_sql = text("""
         SELECT 
             date_trunc('week', created_at) AS wk,
@@ -120,6 +135,7 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
     msg_rows = (await db.execute(msg_sql, params)).fetchall()
     fb_rows = (await db.execute(fb_sql, params)).fetchall()
     pq_rows = (await db.execute(pq_sql, params)).fetchall()
+    pq_res_rows = (await db.execute(pq_res_sql, params)).fetchall()
     l_rows = (await db.execute(l_sql, params)).fetchall()
     lu_rows = (await db.execute(lu_sql, params)).fetchall()
 
@@ -134,6 +150,7 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
     msg_map = to_map(msg_rows, "total_q", "ai_ans", "owner_ans")
     fb_map = to_map(fb_rows, "good", "bad")
     pq_map = to_map(pq_rows, "pend")
+    pq_res_map = to_map(pq_res_rows, "owner_res")
     l_map = to_map(l_rows, "lc")
     lu_map = to_map(lu_rows, "lu")
 
@@ -148,7 +165,7 @@ async def _get_weekly_trends_fast(db: AsyncSession, business_id: str) -> list:
             week_start=k,
             total_questions=msg_map.get(k, {}).get("total_q", 0),
             ai_answered=msg_map.get(k, {}).get("ai_ans", 0),
-            owner_answered=msg_map.get(k, {}).get("owner_ans", 0),
+            owner_answered=max(msg_map.get(k, {}).get("owner_ans", 0), pq_res_map.get(k, {}).get("owner_res", 0)),
             good_answers=fb_map.get(k, {}).get("good", 0),
             bad_answers=fb_map.get(k, {}).get("bad", 0),
             pending=pq_map.get(k, {}).get("pend", 0),
