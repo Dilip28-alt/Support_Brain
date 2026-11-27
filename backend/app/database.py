@@ -74,4 +74,16 @@ async def init_db():
             await conn.execute(text("ALTER TYPE messagerole ADD VALUE IF NOT EXISTS 'owner';"))
         except Exception:
             pass
+        try:
+            # Re-attribute any legacy pending question owner replies that were saved as assistant
+            await conn.execute(text("""
+                UPDATE messages
+                SET role = 'owner'
+                FROM pending_questions pq
+                WHERE messages.conversation_id = pq.conversation_id
+                  AND messages.role = 'assistant'
+                  AND messages.content = pq.owner_answer;
+            """))
+        except Exception:
+            pass
         logger.info("✅ Database schema verified.")
