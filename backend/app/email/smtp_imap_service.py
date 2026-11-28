@@ -253,9 +253,17 @@ async def fetch_imap_new_emails(
                     elif ctype == "text/html" and not body_html:
                         body_html = payload.decode(errors="replace")
             else:
+                ctype = msg.get_content_type()
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    body_text = payload.decode(errors="replace")
+                    decoded = payload.decode(errors="replace")
+                    if ctype == "text/html":
+                        body_html = decoded
+                    else:
+                        body_text = decoded
+
+            from app.utils.html_utils import extract_readable_email_text
+            clean_body = extract_readable_email_text(body_text=body_text, body_html=body_html, subject=subject)
 
             email_msg = EmailMessage(
                 business_id=account.business_id,
@@ -266,7 +274,7 @@ async def fetch_imap_new_emails(
                 subject=subject,
                 sender=sender,
                 recipient=recipient,
-                body_text=body_text.strip(),
+                body_text=clean_body,
                 body_html=body_html.strip(),
                 status=EmailMessageStatus.pending,
                 received_at=datetime.now(timezone.utc),

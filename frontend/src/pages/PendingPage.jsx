@@ -17,6 +17,20 @@ import {
   AlertCircle
 } from 'lucide-react'
 
+// Safely clean and convert HTML content into human-readable text without dangerouslySetInnerHTML
+function cleanDisplayText(text) {
+  if (!text || typeof text !== 'string') return ''
+  if (!/<[a-z/][\s\S]*>/i.test(text)) return text
+  try {
+    const doc = new DOMParser().parseFromString(text, 'text/html')
+    doc.querySelectorAll('script, style, head, meta, title, noscript, link').forEach((el) => el.remove())
+    const extracted = doc.body.textContent || doc.body.innerText || ''
+    return extracted.replace(/\n\s*\n\s*\n/g, '\n\n').trim()
+  } catch {
+    return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+}
+
 export default function PendingPage() {
   const [questions, setQuestions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -205,8 +219,8 @@ export default function PendingPage() {
                         </span>
                       </div>
 
-                      <h3 className="text-base font-semibold text-slate-900 leading-snug">
-                        {q.customer_question}
+                      <h3 className="text-base font-semibold text-slate-900 leading-snug whitespace-pre-wrap">
+                        {cleanDisplayText(q.customer_question)}
                       </h3>
 
                       {/* Customer Info */}

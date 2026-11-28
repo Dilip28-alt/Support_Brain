@@ -226,6 +226,8 @@ async def fetch_new_emails(
         )
 
         text_body, html_body = _extract_body(msg.get("payload", {}))
+        from app.utils.html_utils import extract_readable_email_text
+        clean_text = extract_readable_email_text(body_text=text_body, body_html=html_body, subject=subject)
 
         email_msg = EmailMessage(
             business_id=account.business_id,
@@ -236,7 +238,7 @@ async def fetch_new_emails(
             subject=subject,
             sender=sender,
             recipient=recipient,
-            body_text=text_body,
+            body_text=clean_text,
             body_html=html_body,
             status=EmailMessageStatus.pending,
             received_at=received_at,

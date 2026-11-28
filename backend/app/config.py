@@ -104,13 +104,14 @@ class Settings(BaseSettings):
         extra = "ignore"
 
     def validate_all(self) -> None:
-        """Called at startup — fails safely if critical security environment variables are missing."""
+        """Called at startup — fails safely and stops the application if critical security variables are missing."""
         critical = ["DATABASE_URL", "APP_SECRET_KEY"]
         for var in critical:
             value = getattr(self, var, None)
             if not value or not str(value).strip() or str(value).startswith("your_"):
                 raise ValueError(
-                    f"❌ Critical environment variable {var} is missing or empty in environment. Server startup aborted for security."
+                    f"❌ Critical environment variable '{var}' is missing, empty, or not configured. "
+                    f"Application startup stopped: '{var}' must be configured in environment variables."
                 )
 
         # Check Gmail credentials gently

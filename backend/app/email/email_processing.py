@@ -45,7 +45,15 @@ async def process_incoming_emails(
     Generates draft from Lessons + Knowledge Brain and enforces Review vs. Auto mode.
     """
     for email_msg in emails:
-        body = email_msg.body_text or email_msg.subject or ""
+        from app.utils.html_utils import extract_readable_email_text
+        body = extract_readable_email_text(
+            body_text=email_msg.body_text,
+            body_html=email_msg.body_html,
+            subject=email_msg.subject,
+        )
+        # Ensure email_msg.body_text is clean and readable
+        if not email_msg.body_text or body != email_msg.body_text:
+            email_msg.body_text = body
         if not body.strip():
             continue
 

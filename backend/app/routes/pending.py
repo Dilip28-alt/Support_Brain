@@ -39,7 +39,12 @@ async def list_pending(
             pass
 
     result = await db.execute(query)
-    return result.scalars().all()
+    items = result.scalars().all()
+    from app.utils.html_utils import clean_html_to_text, is_html_content
+    for item in items:
+        if item.customer_question and is_html_content(item.customer_question):
+            item.customer_question = clean_html_to_text(item.customer_question)
+    return items
 
 
 @router.post("/{question_id}/resolve", response_model=PendingQuestionResponse)
@@ -61,7 +66,8 @@ async def resolve_question(
 
     # Safely extract attributes before any async database operations
     q_id = question.id
-    q_question = question.customer_question or ""
+    from app.utils.html_utils import clean_html_to_text
+    q_question = clean_html_to_text(question.customer_question or "")
     q_source = question.source.value if hasattr(question.source, "value") else str(question.source)
     q_conv_id = question.conversation_id
     q_email_id = question.email_message_id
